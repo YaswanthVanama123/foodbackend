@@ -24,6 +24,76 @@ const generateSuperAdminToken = (superAdminId: string): string => {
   );
 };
 
+// @desc    Super admin registration (temporary - for initial setup)
+// @route   POST /api/super-admin/auth/register
+// @access  Public
+export const superAdminRegister = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { username, password, email, firstName, lastName } = req.body;
+
+    // Validation
+    if (!username || !password || !email) {
+      res.status(400).json({
+        success: false,
+        message: 'Please provide username, password, and email',
+      });
+      return;
+    }
+
+    // Check if super admin already exists
+    const existingByUsername = await SuperAdmin.findOne({ username });
+    if (existingByUsername) {
+      res.status(400).json({
+        success: false,
+        message: 'Username already exists',
+      });
+      return;
+    }
+
+    const existingByEmail = await SuperAdmin.findOne({ email });
+    if (existingByEmail) {
+      res.status(400).json({
+        success: false,
+        message: 'Email already exists',
+      });
+      return;
+    }
+
+    // Create super admin
+    const superAdmin = await SuperAdmin.create({
+      username,
+      password, // Will be hashed by pre-save hook
+      email,
+      firstName: firstName || '',
+      lastName: lastName || '',
+      isActive: true,
+    });
+
+    // Generate token
+    const token = generateSuperAdminToken(superAdmin._id.toString());
+
+    res.status(201).json({
+      success: true,
+      data: {
+        superAdmin: {
+          _id: superAdmin._id,
+          username: superAdmin.username,
+          email: superAdmin.email,
+          firstName: superAdmin.firstName,
+          lastName: superAdmin.lastName,
+        },
+        token,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error registering super admin:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error registering super admin',
+    });
+  }
+};
+
 // @desc    Super admin login
 // @route   POST /api/super-admin/auth/login
 // @access  Public
@@ -90,6 +160,60 @@ export const superAdminLogin = async (req: Request, res: Response): Promise<void
     });
   } catch (error: any) {
     console.error('Super admin login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get current super admin
+// @route   GET /api/super-admin/auth/me
+// @access  Private (Super Admin)
+export const getCurrentSuperAdmin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // req.superAdminId is set by superAdminAuth middleware
+    const superAdminId = (req as any).superAdminId;
+
+    if (!superAdminId) {
+      res.status(401).json({
+        success: false,
+        message: 'Not authenticated',
+      });
+      return;
+    }
+
+    // Find super admin
+    const superAdmin = await SuperAdmin.findById(superAdminId);
+
+    if (!superAdmin) {
+      res.status(404).json({
+        success: false,
+        message: 'Super admin not found',
+      });
+      return;
+    }
+
+    // Check if super admin is active
+    if (!superAdmin.isActive) {
+      res.status(403).json({
+        success: false,
+        message: 'Account is inactive',
+      });
+      return;
+    }
+
+    // Remove password from response
+    const superAdminData = superAdmin.toObject();
+    const { password: _, ...superAdminWithoutPassword } = superAdminData;
+
+    res.status(200).json({
+      success: true,
+      data: superAdminWithoutPassword,
+    });
+  } catch (error: any) {
+    console.error('Get current super admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -267,7 +391,11 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
         country: 'US',
       },
       branding: branding || {
-        logo: '',
+        logo: {
+          original: '',
+          medium: '',
+          small: '',
+        },
         primaryColor: '#1F2937',
         secondaryColor: '#F59E0B',
         accentColor: '#10B981',
@@ -566,8 +694,18 @@ export const deleteRestaurant = async (req: Request, res: Response): Promise<voi
 // @access  Private (Super Admin)
 export const createRestaurantAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { restaurantId } = req.params;
+    // Accept restaurantId from either params (for /restaurants/:id/admins) or body (for /admins)
+    const restaurantId = req.params.restaurantId || req.body.restaurantId;
     const { username, email, password, firstName, lastName, role, permissions } = req.body;
+
+    // Validate restaurantId
+    if (!restaurantId) {
+      res.status(400).json({
+        success: false,
+        message: 'Restaurant ID is required',
+      });
+      return;
+    }
 
     // Validate restaurant exists
     const restaurant = await Restaurant.findById(restaurantId);
@@ -775,6 +913,292 @@ export const getGlobalAnalytics = async (_req: Request, res: Response): Promise<
     });
   } catch (error: any) {
     console.error('Get global analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get all admins across all restaurants
+// @route   GET /api/super-admin/admins
+// @access  Private (Super Admin)
+export const getAllAdmins = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      restaurantId,
+      role,
+      status,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+    } = req.query;
+
+    // Build filter
+    const filter: any = {};
+
+    if (search) {
+      filter.$or = [
+        { username: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    if (restaurantId) {
+      filter.restaurantId = restaurantId;
+    }
+
+    if (role) {
+      filter.role = role;
+    }
+
+    if (status) {
+      filter.isActive = status === 'active';
+    }
+
+    // Pagination
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort
+    const sort: any = {};
+    sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
+
+    // Query with restaurant population
+    const [admins, total] = await Promise.all([
+      Admin.find(filter)
+        .select('-password')
+        .populate('restaurantId', 'name subdomain')
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Admin.countDocuments(filter),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        admins,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          pages: Math.ceil(total / limitNum),
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('Get all admins error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get admin by ID
+// @route   GET /api/super-admin/admins/:id
+// @access  Private (Super Admin)
+export const getAdminById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const admin = await Admin.findById(id)
+      .select('-password')
+      .populate('restaurantId', 'name subdomain email phone')
+      .lean();
+
+    if (!admin) {
+      res.status(404).json({
+        success: false,
+        message: 'Admin not found',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: admin,
+    });
+  } catch (error: any) {
+    console.error('Get admin by ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Update admin
+// @route   PUT /api/super-admin/admins/:id
+// @access  Private (Super Admin)
+export const updateAdmin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Don't allow password update through this endpoint
+    if (updateData.password) {
+      delete updateData.password;
+    }
+
+    // Don't allow restaurantId change
+    if (updateData.restaurantId) {
+      delete updateData.restaurantId;
+    }
+
+    const admin = await Admin.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!admin) {
+      res.status(404).json({
+        success: false,
+        message: 'Admin not found',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: admin,
+      message: 'Admin updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Update admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Delete admin
+// @route   DELETE /api/super-admin/admins/:id
+// @access  Private (Super Admin)
+export const deleteAdmin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const admin = await Admin.findById(id);
+
+    if (!admin) {
+      res.status(404).json({
+        success: false,
+        message: 'Admin not found',
+      });
+      return;
+    }
+
+    await admin.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: 'Admin deleted successfully',
+    });
+  } catch (error: any) {
+    console.error('Delete admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Toggle admin status
+// @route   PATCH /api/super-admin/admins/:id/status
+// @access  Private (Super Admin)
+export const toggleAdminStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== 'boolean') {
+      res.status(400).json({
+        success: false,
+        message: 'isActive must be a boolean',
+      });
+      return;
+    }
+
+    const admin = await Admin.findByIdAndUpdate(
+      id,
+      { $set: { isActive } },
+      { new: true }
+    ).select('-password');
+
+    if (!admin) {
+      res.status(404).json({
+        success: false,
+        message: 'Admin not found',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: admin,
+      message: `Admin ${isActive ? 'activated' : 'deactivated'} successfully`,
+    });
+  } catch (error: any) {
+    console.error('Toggle admin status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Reset admin password
+// @route   POST /api/super-admin/admins/:id/reset-password
+// @access  Private (Super Admin)
+export const resetAdminPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters',
+      });
+      return;
+    }
+
+    const admin = await Admin.findById(id);
+
+    if (!admin) {
+      res.status(404).json({
+        success: false,
+        message: 'Admin not found',
+      });
+      return;
+    }
+
+    // Update password (will be hashed by pre-save hook)
+    admin.password = newPassword;
+    await admin.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully',
+    });
+  } catch (error: any) {
+    console.error('Reset admin password error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',

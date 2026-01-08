@@ -1,99 +1,110 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import SuperAdmin from '../models/SuperAdmin';
-import Restaurant from '../models/Restaurant';
-import Admin from '../models/Admin';
-import Category from '../models/Category';
-import MenuItem from '../models/MenuItem';
-import Table from '../models/Table';
-import Order from '../models/Order';
-import connectDB from '../config/database';
+import Restaurant from '../modules/common/models/Restaurant';
+import Admin from '../modules/common/models/Admin';
+import Category from '../modules/common/models/Category';
+import MenuItem from '../modules/common/models/MenuItem';
+import Table from '../modules/common/models/Table';
+import Customer from '../modules/common/models/Customer';
+import Order from '../modules/common/models/Order';
+import Plan from '../modules/common/models/Plan';
 
 dotenv.config();
+
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0';
 
 /**
  * Multi-Tenant Seed Script
  *
- * Creates complete demo data for all 3 frontend apps:
- * 1. Super Admin App - Platform management
- * 2. Restaurant Admin App - Restaurant management
- * 3. User App - Customer ordering
+ * Creates complete test data for 3 restaurants:
+ * 1. Pizza Palace - Italian restaurant with pizzas and pasta
+ * 2. Burger Barn - American burger joint
+ * 3. Sushi Spot - Japanese sushi restaurant
  *
- * Creates:
- * - 1 Super Admin
- * - 3 Demo Restaurants (pizzahut, burgerking, tacobell)
- * - Admins for each restaurant
- * - Full menu data for each restaurant
- * - Tables for each restaurant
- * - Sample orders
+ * Each restaurant includes:
+ * - 1 Admin user
+ * - 5-10 Categories
+ * - 15-20 Menu items
+ * - 10 Tables
+ * - 5 Sample customers
+ * - 10-15 Orders with different statuses
  */
 
-const seedMultiTenant = async () => {
+async function connectDB() {
   try {
-    await connectDB();
+    await mongoose.connect(MONGODB_URI);
+    console.log('✅ Connected to MongoDB');
+  } catch (error) {
+    console.error('❌ MongoDB connection failed:', error);
+    throw error;
+  }
+}
 
-    console.log('╔═══════════════════════════════════════════════════════════╗');
+async function seedMultiTenant() {
+  try {
+    console.log('\n╔═══════════════════════════════════════════════════════════╗');
     console.log('║                                                           ║');
-    console.log('║   🌱 Multi-Tenant Seed Script                            ║');
+    console.log('║   🌍 Seeding Multi-Tenant Test Data                      ║');
     console.log('║   Patlinks Food Ordering System                           ║');
     console.log('║                                                           ║');
     console.log('╚═══════════════════════════════════════════════════════════╝\n');
 
-    // STEP 1: Create Super Admin
-    console.log('1️⃣  Creating Super Admin...');
-    await SuperAdmin.deleteMany({});
+    await connectDB();
 
-    const superAdmin = await SuperAdmin.create({
-      username: 'superadmin',
-      email: 'superadmin@patlinks.com',
-      password: 'SuperAdmin@123',
-      firstName: 'Platform',
-      lastName: 'Administrator',
-      role: 'super_admin',
-      permissions: [
-        'manage:restaurants',
-        'manage:admins',
-        'view:analytics',
-        'manage:subscriptions',
-        'system:admin',
-      ],
-      isActive: true,
-    });
-    console.log('   ✓ Super Admin created:', superAdmin.username);
+    // Get plans
+    console.log('🔍 Fetching subscription plans...');
+    const plans = await Plan.find({}).sort({ displayOrder: 1 });
 
-    // STEP 2: Create Restaurants
-    console.log('\n2️⃣  Creating Restaurants...');
+    if (plans.length === 0) {
+      console.log('⚠️  No plans found! Run seedPlans.ts first.');
+      throw new Error('No subscription plans found');
+    }
+
+    console.log(`   ✓ Found ${plans.length} plans\n`);
+
+    // Clear existing data
+    console.log('🗑️  Clearing existing restaurant data...');
     await Restaurant.deleteMany({});
+    await Admin.deleteMany({});
+    await Category.deleteMany({});
+    await MenuItem.deleteMany({});
+    await Table.deleteMany({});
+    await Customer.deleteMany({});
+    await Order.deleteMany({});
+    console.log('   ✓ Existing data cleared\n');
+
+    // Create restaurants
+    console.log('🏪 Creating restaurants...\n');
 
     const restaurants = await Restaurant.insertMany([
       {
-        subdomain: 'pizzahut',
-        name: 'Pizza Hut Demo',
-        slug: 'pizzahut-demo',
-        email: 'contact@pizzahut-demo.com',
-        phone: '+1-555-0101',
+        subdomain: 'pizzapalace',
+        name: 'Pizza Palace',
+        slug: 'pizza-palace',
+        email: 'contact@pizzapalace.com',
+        phone: '+1 (555) 111-0001',
         address: {
-          street: '123 Pizza Street',
+          street: '123 Main Street',
           city: 'New York',
           state: 'NY',
           zipCode: '10001',
-          country: 'US',
+          country: 'USA',
         },
         branding: {
-          logo: '',
-          primaryColor: '#E60000',
-          secondaryColor: '#FFFFFF',
-          accentColor: '#FFD700',
-          fontFamily: 'Arial',
+          logo: { original: '', medium: '', small: '' },
+          primaryColor: '#DC2626',
+          secondaryColor: '#FEF3C7',
+          accentColor: '#059669',
+          fontFamily: 'Roboto, sans-serif',
           theme: 'light',
         },
         settings: {
           currency: 'USD',
-          taxRate: 8.875,
-          serviceChargeRate: 0,
+          taxRate: 8.5,
+          serviceChargeRate: 5,
           timezone: 'America/New_York',
           locale: 'en-US',
-          orderNumberPrefix: 'PH',
+          orderNumberPrefix: 'PP',
         },
         subscription: {
           plan: 'pro',
@@ -102,33 +113,32 @@ const seedMultiTenant = async () => {
           endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
           billingCycle: 'monthly',
           maxTables: 50,
-          maxMenuItems: 200,
+          maxMenuItems: 300,
           maxAdmins: 10,
         },
         isActive: true,
         isOnboarded: true,
         onboardingStep: 10,
-        createdBy: superAdmin._id,
       },
       {
-        subdomain: 'burgerking',
-        name: 'Burger King Demo',
-        slug: 'burgerking-demo',
-        email: 'contact@burgerking-demo.com',
-        phone: '+1-555-0102',
+        subdomain: 'burgerbarn',
+        name: 'Burger Barn',
+        slug: 'burger-barn',
+        email: 'contact@burgerbarn.com',
+        phone: '+1 (555) 222-0002',
         address: {
-          street: '456 Burger Avenue',
+          street: '456 Oak Avenue',
           city: 'Los Angeles',
           state: 'CA',
           zipCode: '90001',
-          country: 'US',
+          country: 'USA',
         },
         branding: {
-          logo: '',
-          primaryColor: '#512F2E',
-          secondaryColor: '#F59E0B',
-          accentColor: '#EF4444',
-          fontFamily: 'Verdana',
+          logo: { original: '', medium: '', small: '' },
+          primaryColor: '#B91C1C',
+          secondaryColor: '#FCD34D',
+          accentColor: '#F59E0B',
+          fontFamily: 'Open Sans, sans-serif',
           theme: 'light',
         },
         settings: {
@@ -137,7 +147,7 @@ const seedMultiTenant = async () => {
           serviceChargeRate: 0,
           timezone: 'America/Los_Angeles',
           locale: 'en-US',
-          orderNumberPrefix: 'BK',
+          orderNumberPrefix: 'BB',
         },
         subscription: {
           plan: 'basic',
@@ -145,490 +155,512 @@ const seedMultiTenant = async () => {
           startDate: new Date(),
           endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
           billingCycle: 'monthly',
-          maxTables: 30,
-          maxMenuItems: 100,
-          maxAdmins: 5,
-        },
-        isActive: true,
-        isOnboarded: true,
-        onboardingStep: 10,
-        createdBy: superAdmin._id,
-      },
-      {
-        subdomain: 'tacobell',
-        name: 'Taco Bell Demo',
-        slug: 'tacobell-demo',
-        email: 'contact@tacobell-demo.com',
-        phone: '+1-555-0103',
-        address: {
-          street: '789 Taco Boulevard',
-          city: 'Austin',
-          state: 'TX',
-          zipCode: '78701',
-          country: 'US',
-        },
-        branding: {
-          logo: '',
-          primaryColor: '#702082',
-          secondaryColor: '#FFC900',
-          accentColor: '#EC008C',
-          fontFamily: 'Helvetica',
-          theme: 'light',
-        },
-        settings: {
-          currency: 'USD',
-          taxRate: 8.25,
-          serviceChargeRate: 0,
-          timezone: 'America/Chicago',
-          locale: 'en-US',
-          orderNumberPrefix: 'TB',
-        },
-        subscription: {
-          plan: 'trial',
-          status: 'active',
-          startDate: new Date(),
-          endDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-          billingCycle: 'monthly',
           maxTables: 20,
-          maxMenuItems: 50,
+          maxMenuItems: 100,
           maxAdmins: 3,
         },
         isActive: true,
         isOnboarded: true,
         onboardingStep: 10,
-        createdBy: superAdmin._id,
+      },
+      {
+        subdomain: 'sushispot',
+        name: 'Sushi Spot',
+        slug: 'sushi-spot',
+        email: 'contact@sushispot.com',
+        phone: '+1 (555) 333-0003',
+        address: {
+          street: '789 Cherry Blossom Lane',
+          city: 'Seattle',
+          state: 'WA',
+          zipCode: '98101',
+          country: 'USA',
+        },
+        branding: {
+          logo: { original: '', medium: '', small: '' },
+          primaryColor: '#1E40AF',
+          secondaryColor: '#FEE2E2',
+          accentColor: '#DC2626',
+          fontFamily: 'Lato, sans-serif',
+          theme: 'light',
+        },
+        settings: {
+          currency: 'USD',
+          taxRate: 10.1,
+          serviceChargeRate: 3,
+          timezone: 'America/Los_Angeles',
+          locale: 'en-US',
+          orderNumberPrefix: 'SS',
+        },
+        subscription: {
+          plan: 'enterprise',
+          status: 'active',
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          billingCycle: 'monthly',
+          maxTables: 999999,
+          maxMenuItems: 999999,
+          maxAdmins: 999999,
+        },
+        isActive: true,
+        isOnboarded: true,
+        onboardingStep: 10,
       },
     ]);
-    console.log(`   ✓ Created ${restaurants.length} restaurants`);
 
-    const [pizzahut, burgerking, tacobell] = restaurants;
+    console.log(`   ✓ Created ${restaurants.length} restaurants\n`);
 
-    // STEP 3: Create Admins for each restaurant
-    console.log('\n3️⃣  Creating Restaurant Admins...');
-    await Admin.deleteMany({});
+    // Create admins for each restaurant
+    console.log('👥 Creating admin users...\n');
 
     const admins = await Admin.insertMany([
       {
-        restaurantId: pizzahut._id,
-        username: 'pizzahut_admin',
-        email: 'admin@pizzahut-demo.com',
-        password: 'Pizza@123',
-        firstName: 'John',
-        lastName: 'Pizza',
+        restaurantId: restaurants[0]._id,
+        username: 'admin1',
+        email: 'admin1@pizzapalace.com',
+        password: 'admin123',
+        firstName: 'Tony',
+        lastName: 'Soprano',
         role: 'admin',
         permissions: [],
         isActive: true,
       },
       {
-        restaurantId: burgerking._id,
-        username: 'burgerking_admin',
-        email: 'admin@burgerking-demo.com',
-        password: 'Burger@123',
-        firstName: 'Mike',
-        lastName: 'Burger',
+        restaurantId: restaurants[1]._id,
+        username: 'admin2',
+        email: 'admin2@burgerbarn.com',
+        password: 'admin123',
+        firstName: 'Bob',
+        lastName: 'Belcher',
         role: 'admin',
         permissions: [],
         isActive: true,
       },
       {
-        restaurantId: tacobell._id,
-        username: 'tacobell_admin',
-        email: 'admin@tacobell-demo.com',
-        password: 'Taco@123',
-        firstName: 'Sarah',
-        lastName: 'Taco',
+        restaurantId: restaurants[2]._id,
+        username: 'admin3',
+        email: 'admin3@sushispot.com',
+        password: 'admin123',
+        firstName: 'Hiro',
+        lastName: 'Tanaka',
         role: 'admin',
         permissions: [],
         isActive: true,
       },
     ]);
-    console.log(`   ✓ Created ${admins.length} restaurant admins`);
 
-    // STEP 4: Seed Pizza Hut
-    console.log('\n4️⃣  Seeding Pizza Hut...');
-    const pizzaHutData = await seedRestaurant(pizzahut._id, 'pizzahut');
-    console.log(`   ✓ Pizza Hut: ${pizzaHutData.categories} categories, ${pizzaHutData.menuItems} items, ${pizzaHutData.tables} tables`);
+    console.log(`   ✓ Created ${admins.length} admin users\n`);
 
-    // STEP 5: Seed Burger King
-    console.log('\n5️⃣  Seeding Burger King...');
-    const burgerKingData = await seedRestaurant(burgerking._id, 'burgerking');
-    console.log(`   ✓ Burger King: ${burgerKingData.categories} categories, ${burgerKingData.menuItems} items, ${burgerKingData.tables} tables`);
+    // Seed each restaurant
+    console.log('🌱 Seeding individual restaurants...\n');
 
-    // STEP 6: Seed Taco Bell
-    console.log('\n6️⃣  Seeding Taco Bell...');
-    const tacoBellData = await seedRestaurant(tacobell._id, 'tacobell');
-    console.log(`   ✓ Taco Bell: ${tacoBellData.categories} categories, ${tacoBellData.menuItems} items, ${tacoBellData.tables} tables`);
+    await seedPizzaPalace(restaurants[0]._id);
+    await seedBurgerBarn(restaurants[1]._id);
+    await seedSushiSpot(restaurants[2]._id);
 
-    // STEP 7: Display Summary
+    // Summary
     console.log('\n╔═══════════════════════════════════════════════════════════╗');
     console.log('║                                                           ║');
-    console.log('║   ✅ Multi-Tenant Seed Completed Successfully!           ║');
+    console.log('║   ✅ Multi-Tenant Seeding Completed!                     ║');
     console.log('║                                                           ║');
     console.log('╚═══════════════════════════════════════════════════════════╝\n');
 
-    console.log('🔐 Super Admin Credentials:');
-    console.log('   Endpoint: POST http://localhost:5000/api/super-admin/auth/login');
-    console.log('   Username: superadmin');
-    console.log('   Password: SuperAdmin@123\n');
+    // Display credentials
+    console.log('🔐 Restaurant Admin Credentials:\n');
 
-    console.log('🏪 Restaurant Admin Credentials:\n');
-    console.log('   Pizza Hut:');
-    console.log('   - Subdomain: pizzahut.localhost:5000');
-    console.log('   - Username: pizzahut_admin');
-    console.log('   - Password: Pizza@123\n');
+    console.log('   🍕 Pizza Palace:');
+    console.log('      Subdomain: pizzapalace.localhost:5000');
+    console.log('      Username: admin1');
+    console.log('      Password: admin123');
+    console.log('      Email: admin1@pizzapalace.com\n');
 
-    console.log('   Burger King:');
-    console.log('   - Subdomain: burgerking.localhost:5000');
-    console.log('   - Username: burgerking_admin');
-    console.log('   - Password: Burger@123\n');
+    console.log('   🍔 Burger Barn:');
+    console.log('      Subdomain: burgerbarn.localhost:5000');
+    console.log('      Username: admin2');
+    console.log('      Password: admin123');
+    console.log('      Email: admin2@burgerbarn.com\n');
 
-    console.log('   Taco Bell:');
-    console.log('   - Subdomain: tacobell.localhost:5000');
-    console.log('   - Username: tacobell_admin');
-    console.log('   - Password: Taco@123\n');
+    console.log('   🍣 Sushi Spot:');
+    console.log('      Subdomain: sushispot.localhost:5000');
+    console.log('      Username: admin3');
+    console.log('      Password: admin123');
+    console.log('      Email: admin3@sushispot.com\n');
 
-    console.log('👥 User App Access:');
-    console.log('   Pizza Hut: http://pizzahut.localhost:5173');
-    console.log('   Burger King: http://burgerking.localhost:5173');
-    console.log('   Taco Bell: http://tacobell.localhost:5173\n');
+    console.log('📊 Summary:');
+    const categoryCount = await Category.countDocuments();
+    const menuItemCount = await MenuItem.countDocuments();
+    const tableCount = await Table.countDocuments();
+    const customerCount = await Customer.countDocuments();
+    const orderCount = await Order.countDocuments();
 
-    console.log('⚙️  Development Tips:');
-    console.log('   - Use x-restaurant-id header for API testing');
-    console.log('   - Each restaurant has isolated data');
-    console.log('   - Socket.io uses namespaces per restaurant\n');
+    console.log(`   Restaurants: ${restaurants.length}`);
+    console.log(`   Admins: ${admins.length}`);
+    console.log(`   Categories: ${categoryCount}`);
+    console.log(`   Menu Items: ${menuItemCount}`);
+    console.log(`   Tables: ${tableCount}`);
+    console.log(`   Customers: ${customerCount}`);
+    console.log(`   Orders: ${orderCount}\n`);
 
-    process.exit(0);
+    await mongoose.connection.close();
+    console.log('🔌 Database connection closed\n');
   } catch (error) {
-    console.error('❌ Error seeding database:', error);
-    process.exit(1);
-  }
-};
-
-// Helper function to seed a restaurant with data
-async function seedRestaurant(restaurantId: mongoose.Types.ObjectId, type: 'pizzahut' | 'burgerking' | 'tacobell') {
-  // Create categories
-  const categoryData = getCategories(type);
-  const categories = await Category.insertMany(
-    categoryData.map((cat) => ({ ...cat, restaurantId }))
-  );
-
-  // Get category IDs
-  const categoryMap: Record<string, mongoose.Types.ObjectId> = {};
-  categories.forEach((cat) => {
-    categoryMap[cat.name] = cat._id;
-  });
-
-  // Create menu items
-  const menuItemData = getMenuItems(type, categoryMap);
-  const menuItems = await MenuItem.insertMany(
-    menuItemData.map((item) => ({ ...item, restaurantId }))
-  );
-
-  // Create tables
-  const tableData = getTables(type);
-  const tables = await Table.insertMany(
-    tableData.map((table) => ({ ...table, restaurantId }))
-  );
-
-  return {
-    categories: categories.length,
-    menuItems: menuItems.length,
-    tables: tables.length,
-  };
-}
-
-// Category data for each restaurant type
-function getCategories(type: string) {
-  if (type === 'pizzahut') {
-    return [
-      { name: 'Pizzas', description: 'Hand-tossed pizzas', displayOrder: 1 },
-      { name: 'Sides', description: 'Appetizers and sides', displayOrder: 2 },
-      { name: 'Wings', description: 'Chicken wings', displayOrder: 3 },
-      { name: 'Pasta', description: 'Italian pasta dishes', displayOrder: 4 },
-      { name: 'Desserts', description: 'Sweet treats', displayOrder: 5 },
-      { name: 'Drinks', description: 'Beverages', displayOrder: 6 },
-    ];
-  } else if (type === 'burgerking') {
-    return [
-      { name: 'Burgers', description: 'Flame-grilled burgers', displayOrder: 1 },
-      { name: 'Chicken', description: 'Chicken sandwiches', displayOrder: 2 },
-      { name: 'Sides', description: 'Fries and sides', displayOrder: 3 },
-      { name: 'Salads', description: 'Fresh salads', displayOrder: 4 },
-      { name: 'Desserts', description: 'Sweet endings', displayOrder: 5 },
-      { name: 'Beverages', description: 'Drinks', displayOrder: 6 },
-    ];
-  } else {
-    return [
-      { name: 'Tacos', description: 'Authentic tacos', displayOrder: 1 },
-      { name: 'Burritos', description: 'Loaded burritos', displayOrder: 2 },
-      { name: 'Quesadillas', description: 'Grilled quesadillas', displayOrder: 3 },
-      { name: 'Sides', description: 'Nachos and more', displayOrder: 4 },
-      { name: 'Desserts', description: 'Sweet treats', displayOrder: 5 },
-      { name: 'Drinks', description: 'Refreshing beverages', displayOrder: 6 },
-    ];
+    console.error('\n❌ Error seeding multi-tenant data:', error);
+    throw error;
   }
 }
 
-// Menu items for each restaurant type
-function getMenuItems(type: string, categoryMap: Record<string, mongoose.Types.ObjectId>) {
-  if (type === 'pizzahut') {
-    return [
-      // Pizzas
-      {
-        name: 'Pepperoni Pizza',
-        description: 'Classic pepperoni with mozzarella',
-        categoryId: categoryMap['Pizzas'],
-        price: 14.99,
-        preparationTime: 20,
-      },
-      {
-        name: 'Margherita Pizza',
-        description: 'Fresh tomatoes, mozzarella, and basil',
-        categoryId: categoryMap['Pizzas'],
-        price: 12.99,
-        isVegetarian: true,
-        preparationTime: 20,
-      },
-      {
-        name: 'Supreme Pizza',
-        description: 'Loaded with pepperoni, sausage, peppers, and onions',
-        categoryId: categoryMap['Pizzas'],
-        price: 17.99,
-        preparationTime: 25,
-      },
-      {
-        name: 'Veggie Lovers Pizza',
-        description: 'Mushrooms, peppers, onions, olives, and tomatoes',
-        categoryId: categoryMap['Pizzas'],
-        price: 15.99,
-        isVegetarian: true,
-        preparationTime: 20,
-      },
-      // Sides
-      {
-        name: 'Breadsticks',
-        description: 'Garlic breadsticks with marinara sauce',
-        categoryId: categoryMap['Sides'],
-        price: 6.99,
-        isVegetarian: true,
-        preparationTime: 10,
-      },
-      {
-        name: 'Mozzarella Sticks',
-        description: 'Breaded mozzarella with marinara',
-        categoryId: categoryMap['Sides'],
-        price: 7.99,
-        isVegetarian: true,
-        preparationTime: 12,
-      },
-      // Wings
-      {
-        name: 'Buffalo Wings',
-        description: 'Spicy buffalo chicken wings',
-        categoryId: categoryMap['Wings'],
-        price: 12.99,
-        preparationTime: 18,
-      },
-      {
-        name: 'BBQ Wings',
-        description: 'Sweet BBQ glazed wings',
-        categoryId: categoryMap['Wings'],
-        price: 12.99,
-        preparationTime: 18,
-      },
-      // Drinks
-      {
-        name: 'Pepsi',
-        description: 'Cold Pepsi',
-        categoryId: categoryMap['Drinks'],
-        price: 2.99,
-        isVegan: true,
-        preparationTime: 2,
-      },
-      {
-        name: 'Mountain Dew',
-        description: 'Cold Mountain Dew',
-        categoryId: categoryMap['Drinks'],
-        price: 2.99,
-        isVegan: true,
-        preparationTime: 2,
-      },
-    ];
-  } else if (type === 'burgerking') {
-    return [
-      // Burgers
-      {
-        name: 'Whopper',
-        description: 'Flame-grilled beef patty with lettuce, tomato, pickles',
-        categoryId: categoryMap['Burgers'],
-        price: 6.99,
-        preparationTime: 12,
-      },
-      {
-        name: 'Double Whopper',
-        description: 'Two flame-grilled beef patties',
-        categoryId: categoryMap['Burgers'],
-        price: 8.99,
-        preparationTime: 15,
-      },
-      {
-        name: 'Bacon King',
-        description: 'Double patty with bacon and cheese',
-        categoryId: categoryMap['Burgers'],
-        price: 9.99,
-        preparationTime: 15,
-      },
-      // Chicken
-      {
-        name: 'Chicken Sandwich',
-        description: 'Crispy chicken with lettuce and mayo',
-        categoryId: categoryMap['Chicken'],
-        price: 6.49,
-        preparationTime: 12,
-      },
-      {
-        name: 'Spicy Chicken',
-        description: 'Spicy crispy chicken sandwich',
-        categoryId: categoryMap['Chicken'],
-        price: 6.99,
-        preparationTime: 12,
-      },
-      // Sides
-      {
-        name: 'French Fries',
-        description: 'Crispy golden fries',
-        categoryId: categoryMap['Sides'],
-        price: 2.99,
-        isVegetarian: true,
-        preparationTime: 5,
-      },
-      {
-        name: 'Onion Rings',
-        description: 'Crispy onion rings',
-        categoryId: categoryMap['Sides'],
-        price: 3.49,
-        isVegetarian: true,
-        preparationTime: 7,
-      },
-      // Beverages
-      {
-        name: 'Coca-Cola',
-        description: 'Cold Coca-Cola',
-        categoryId: categoryMap['Beverages'],
-        price: 2.49,
-        isVegan: true,
-        preparationTime: 2,
-      },
-      {
-        name: 'Sprite',
-        description: 'Cold Sprite',
-        categoryId: categoryMap['Beverages'],
-        price: 2.49,
-        isVegan: true,
-        preparationTime: 2,
-      },
-    ];
-  } else {
-    return [
-      // Tacos
-      {
-        name: 'Crunchy Taco',
-        description: 'Seasoned beef in a crunchy shell',
-        categoryId: categoryMap['Tacos'],
-        price: 1.99,
-        preparationTime: 8,
-      },
-      {
-        name: 'Soft Taco',
-        description: 'Seasoned beef in a soft flour tortilla',
-        categoryId: categoryMap['Tacos'],
-        price: 1.99,
-        preparationTime: 8,
-      },
-      {
-        name: 'Doritos Locos Tacos',
-        description: 'Taco in a Doritos shell',
-        categoryId: categoryMap['Tacos'],
-        price: 2.49,
-        preparationTime: 10,
-      },
-      // Burritos
-      {
-        name: 'Bean Burrito',
-        description: 'Beans, cheese, and red sauce',
-        categoryId: categoryMap['Burritos'],
-        price: 3.99,
-        isVegetarian: true,
-        preparationTime: 10,
-      },
-      {
-        name: 'Beef Burrito',
-        description: 'Seasoned beef burrito',
-        categoryId: categoryMap['Burritos'],
-        price: 4.99,
-        preparationTime: 12,
-      },
-      {
-        name: 'Burrito Supreme',
-        description: 'Loaded with beef, beans, sour cream',
-        categoryId: categoryMap['Burritos'],
-        price: 5.99,
-        preparationTime: 12,
-      },
-      // Quesadillas
-      {
-        name: 'Cheese Quesadilla',
-        description: 'Grilled flour tortilla with melted cheese',
-        categoryId: categoryMap['Quesadillas'],
-        price: 4.49,
-        isVegetarian: true,
-        preparationTime: 10,
-      },
-      {
-        name: 'Chicken Quesadilla',
-        description: 'Grilled chicken and cheese',
-        categoryId: categoryMap['Quesadillas'],
-        price: 5.99,
-        preparationTime: 12,
-      },
-      // Drinks
-      {
-        name: 'Pepsi',
-        description: 'Cold Pepsi',
-        categoryId: categoryMap['Drinks'],
-        price: 2.29,
-        isVegan: true,
-        preparationTime: 2,
-      },
-      {
-        name: 'Baja Blast',
-        description: 'Mountain Dew Baja Blast',
-        categoryId: categoryMap['Drinks'],
-        price: 2.49,
-        isVegan: true,
-        preparationTime: 2,
-      },
-    ];
-  }
-}
+// Seed Pizza Palace
+async function seedPizzaPalace(restaurantId: mongoose.Types.ObjectId) {
+  console.log('   🍕 Seeding Pizza Palace...');
 
-// Tables for each restaurant
-function getTables(type: string) {
-  const count = type === 'pizzahut' ? 15 : type === 'burgerking' ? 12 : 10;
-  const tables = [];
+  // Categories
+  const categories = await Category.insertMany([
+    { restaurantId, name: 'Pizzas', description: 'Hand-tossed and wood-fired pizzas', displayOrder: 1, isActive: true },
+    { restaurantId, name: 'Appetizers', description: 'Starters and small plates', displayOrder: 2, isActive: true },
+    { restaurantId, name: 'Pasta', description: 'Fresh Italian pasta dishes', displayOrder: 3, isActive: true },
+    { restaurantId, name: 'Salads', description: 'Fresh garden salads', displayOrder: 4, isActive: true },
+    { restaurantId, name: 'Desserts', description: 'Sweet Italian treats', displayOrder: 5, isActive: true },
+    { restaurantId, name: 'Beverages', description: 'Drinks and refreshments', displayOrder: 6, isActive: true },
+  ]);
 
-  for (let i = 1; i <= count; i++) {
-    tables.push({
-      tableNumber: i.toString(),
-      capacity: i % 4 === 0 ? 6 : i % 3 === 0 ? 4 : 2,
-      location: i <= count / 3 ? 'Window' : i <= (count * 2) / 3 ? 'Center' : 'Back',
+  const catMap: any = {};
+  categories.forEach(cat => catMap[cat.name] = cat._id);
+
+  // Menu Items
+  await MenuItem.insertMany([
+    // Pizzas
+    { restaurantId, categoryId: catMap['Pizzas'], name: 'Margherita', description: 'Classic tomato, mozzarella, and basil', price: 12.99, isAvailable: true, isVegetarian: true, preparationTime: 15 },
+    { restaurantId, categoryId: catMap['Pizzas'], name: 'Pepperoni', description: 'Pepperoni and mozzarella cheese', price: 14.99, isAvailable: true, preparationTime: 15 },
+    { restaurantId, categoryId: catMap['Pizzas'], name: 'Supreme', description: 'Pepperoni, sausage, peppers, onions, mushrooms', price: 17.99, isAvailable: true, preparationTime: 18 },
+    { restaurantId, categoryId: catMap['Pizzas'], name: 'Hawaiian', description: 'Ham, pineapple, and mozzarella', price: 15.99, isAvailable: true, preparationTime: 15 },
+    { restaurantId, categoryId: catMap['Pizzas'], name: 'Veggie Deluxe', description: 'Mushrooms, peppers, onions, olives, tomatoes', price: 16.99, isAvailable: true, isVegetarian: true, preparationTime: 15 },
+    // Appetizers
+    { restaurantId, categoryId: catMap['Appetizers'], name: 'Garlic Bread', description: 'Toasted garlic bread with herbs', price: 5.99, isAvailable: true, isVegetarian: true, preparationTime: 8 },
+    { restaurantId, categoryId: catMap['Appetizers'], name: 'Mozzarella Sticks', description: 'Breaded mozzarella with marinara', price: 7.99, isAvailable: true, isVegetarian: true, preparationTime: 10 },
+    { restaurantId, categoryId: catMap['Appetizers'], name: 'Bruschetta', description: 'Toasted bread with tomatoes and basil', price: 6.99, isAvailable: true, isVegetarian: true, isVegan: true, preparationTime: 8 },
+    // Pasta
+    { restaurantId, categoryId: catMap['Pasta'], name: 'Spaghetti Carbonara', description: 'Pasta with bacon, egg, and parmesan', price: 14.99, isAvailable: true, preparationTime: 20 },
+    { restaurantId, categoryId: catMap['Pasta'], name: 'Fettuccine Alfredo', description: 'Creamy parmesan sauce', price: 13.99, isAvailable: true, isVegetarian: true, preparationTime: 18 },
+    { restaurantId, categoryId: catMap['Pasta'], name: 'Penne Arrabbiata', description: 'Spicy tomato sauce', price: 12.99, isAvailable: true, isVegetarian: true, preparationTime: 18 },
+    // Salads
+    { restaurantId, categoryId: catMap['Salads'], name: 'Caesar Salad', description: 'Romaine lettuce with Caesar dressing', price: 8.99, isAvailable: true, isVegetarian: true, preparationTime: 10 },
+    { restaurantId, categoryId: catMap['Salads'], name: 'Caprese Salad', description: 'Tomatoes, mozzarella, and basil', price: 9.99, isAvailable: true, isVegetarian: true, preparationTime: 10 },
+    // Desserts
+    { restaurantId, categoryId: catMap['Desserts'], name: 'Tiramisu', description: 'Classic Italian coffee dessert', price: 6.99, isAvailable: true, isVegetarian: true, preparationTime: 5 },
+    { restaurantId, categoryId: catMap['Desserts'], name: 'Gelato', description: 'Italian ice cream - various flavors', price: 5.99, isAvailable: true, isVegetarian: true, preparationTime: 5 },
+    // Beverages
+    { restaurantId, categoryId: catMap['Beverages'], name: 'Coca-Cola', description: 'Classic soft drink', price: 2.99, isAvailable: true, isVegan: true, preparationTime: 2 },
+    { restaurantId, categoryId: catMap['Beverages'], name: 'Italian Soda', description: 'Flavored sparkling water', price: 3.99, isAvailable: true, isVegan: true, preparationTime: 3 },
+  ]);
+
+  // Tables
+  await Table.insertMany(
+    Array.from({ length: 10 }, (_, i) => ({
+      restaurantId,
+      tableNumber: `T${i + 1}`,
+      capacity: i % 3 === 0 ? 6 : i % 2 === 0 ? 4 : 2,
+      location: i < 3 ? 'Window' : i < 7 ? 'Main Hall' : 'Terrace',
       isActive: true,
-      isOccupied: false,
+      isOccupied: i < 3,
+    }))
+  );
+
+  // Customers
+  const customers = await Customer.insertMany([
+    { restaurantId, email: 'john.doe@example.com', password: 'customer123', firstName: 'John', lastName: 'Doe', phone: '+1 555-1001', isActive: true },
+    { restaurantId, email: 'jane.smith@example.com', password: 'customer123', firstName: 'Jane', lastName: 'Smith', phone: '+1 555-1002', isActive: true },
+    { restaurantId, email: 'mike.jones@example.com', password: 'customer123', firstName: 'Mike', lastName: 'Jones', phone: '+1 555-1003', isActive: true },
+    { restaurantId, email: 'sarah.wilson@example.com', password: 'customer123', firstName: 'Sarah', lastName: 'Wilson', phone: '+1 555-1004', isActive: true },
+    { restaurantId, email: 'tom.brown@example.com', password: 'customer123', firstName: 'Tom', lastName: 'Brown', phone: '+1 555-1005', isActive: true },
+  ]);
+
+  // Orders
+  const tables = await Table.find({ restaurantId });
+  const menuItems = await MenuItem.find({ restaurantId });
+  const statuses: Array<'received' | 'preparing' | 'ready' | 'served' | 'cancelled'> = ['received', 'preparing', 'ready', 'served', 'cancelled'];
+
+  for (let i = 0; i < 12; i++) {
+    const randomTable = tables[Math.floor(Math.random() * tables.length)];
+    const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
+    const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+    const itemCount = Math.floor(Math.random() * 3) + 1;
+
+    const orderItems = [];
+    let subtotal = 0;
+
+    for (let j = 0; j < itemCount; j++) {
+      const randomItem = menuItems[Math.floor(Math.random() * menuItems.length)];
+      const quantity = Math.floor(Math.random() * 2) + 1;
+      const itemSubtotal = randomItem.price * quantity;
+
+      orderItems.push({
+        menuItemId: randomItem._id,
+        name: randomItem.name,
+        price: randomItem.price,
+        quantity,
+        subtotal: itemSubtotal,
+      });
+
+      subtotal += itemSubtotal;
+    }
+
+    const tax = subtotal * 0.085;
+    const total = subtotal + tax;
+
+    await Order.create({
+      restaurantId,
+      tableId: randomTable._id,
+      tableNumber: randomTable.tableNumber,
+      customerId: randomCustomer._id,
+      items: orderItems,
+      subtotal,
+      tax,
+      total,
+      status: randomStatus,
+      statusHistory: [{ status: randomStatus, timestamp: new Date() }],
+      createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
     });
   }
 
-  return tables;
+  console.log('      ✓ Pizza Palace seeded');
 }
 
-// Run seed
-seedMultiTenant();
+// Seed Burger Barn
+async function seedBurgerBarn(restaurantId: mongoose.Types.ObjectId) {
+  console.log('   🍔 Seeding Burger Barn...');
+
+  const categories = await Category.insertMany([
+    { restaurantId, name: 'Burgers', description: 'Juicy flame-grilled burgers', displayOrder: 1, isActive: true },
+    { restaurantId, name: 'Chicken', description: 'Crispy chicken sandwiches', displayOrder: 2, isActive: true },
+    { restaurantId, name: 'Sides', description: 'Fries and more', displayOrder: 3, isActive: true },
+    { restaurantId, name: 'Salads', description: 'Fresh and healthy', displayOrder: 4, isActive: true },
+    { restaurantId, name: 'Desserts', description: 'Sweet treats', displayOrder: 5, isActive: true },
+    { restaurantId, name: 'Drinks', description: 'Cold beverages', displayOrder: 6, isActive: true },
+  ]);
+
+  const catMap: any = {};
+  categories.forEach(cat => catMap[cat.name] = cat._id);
+
+  await MenuItem.insertMany([
+    // Burgers
+    { restaurantId, categoryId: catMap['Burgers'], name: 'Classic Burger', description: 'Beef patty, lettuce, tomato, onion', price: 8.99, isAvailable: true, preparationTime: 12 },
+    { restaurantId, categoryId: catMap['Burgers'], name: 'Cheeseburger', description: 'Classic burger with cheese', price: 9.99, isAvailable: true, preparationTime: 12 },
+    { restaurantId, categoryId: catMap['Burgers'], name: 'Bacon Burger', description: 'Burger with crispy bacon', price: 11.99, isAvailable: true, preparationTime: 15 },
+    { restaurantId, categoryId: catMap['Burgers'], name: 'Double Burger', description: 'Two beef patties with cheese', price: 13.99, isAvailable: true, preparationTime: 15 },
+    { restaurantId, categoryId: catMap['Burgers'], name: 'Veggie Burger', description: 'Plant-based patty', price: 10.99, isAvailable: true, isVegetarian: true, preparationTime: 12 },
+    // Chicken
+    { restaurantId, categoryId: catMap['Chicken'], name: 'Crispy Chicken Sandwich', description: 'Breaded chicken with mayo', price: 9.99, isAvailable: true, preparationTime: 12 },
+    { restaurantId, categoryId: catMap['Chicken'], name: 'Spicy Chicken', description: 'Spicy breaded chicken', price: 10.99, isAvailable: true, preparationTime: 12 },
+    { restaurantId, categoryId: catMap['Chicken'], name: 'Grilled Chicken Sandwich', description: 'Grilled chicken breast', price: 10.49, isAvailable: true, preparationTime: 12 },
+    // Sides
+    { restaurantId, categoryId: catMap['Sides'], name: 'French Fries', description: 'Crispy golden fries', price: 3.99, isAvailable: true, isVegetarian: true, preparationTime: 8 },
+    { restaurantId, categoryId: catMap['Sides'], name: 'Onion Rings', description: 'Battered onion rings', price: 4.99, isAvailable: true, isVegetarian: true, preparationTime: 10 },
+    { restaurantId, categoryId: catMap['Sides'], name: 'Loaded Fries', description: 'Fries with cheese and bacon', price: 6.99, isAvailable: true, preparationTime: 10 },
+    // Salads
+    { restaurantId, categoryId: catMap['Salads'], name: 'Garden Salad', description: 'Mixed greens with vegetables', price: 7.99, isAvailable: true, isVegetarian: true, isVegan: true, preparationTime: 8 },
+    { restaurantId, categoryId: catMap['Salads'], name: 'Chicken Salad', description: 'Grilled chicken on greens', price: 10.99, isAvailable: true, preparationTime: 10 },
+    // Desserts
+    { restaurantId, categoryId: catMap['Desserts'], name: 'Chocolate Shake', description: 'Thick chocolate milkshake', price: 5.99, isAvailable: true, isVegetarian: true, preparationTime: 5 },
+    { restaurantId, categoryId: catMap['Desserts'], name: 'Apple Pie', description: 'Warm apple pie', price: 4.99, isAvailable: true, isVegetarian: true, preparationTime: 5 },
+    // Drinks
+    { restaurantId, categoryId: catMap['Drinks'], name: 'Soda', description: 'Various flavors', price: 2.49, isAvailable: true, isVegan: true, preparationTime: 2 },
+    { restaurantId, categoryId: catMap['Drinks'], name: 'Iced Tea', description: 'Fresh brewed iced tea', price: 2.99, isAvailable: true, isVegan: true, preparationTime: 2 },
+  ]);
+
+  await Table.insertMany(
+    Array.from({ length: 10 }, (_, i) => ({
+      restaurantId,
+      tableNumber: `B${i + 1}`,
+      capacity: i % 3 === 0 ? 6 : i % 2 === 0 ? 4 : 2,
+      location: i < 5 ? 'Indoor' : 'Outdoor',
+      isActive: true,
+      isOccupied: i < 2,
+    }))
+  );
+
+  const customers = await Customer.insertMany([
+    { restaurantId, email: 'alex.johnson@example.com', password: 'customer123', firstName: 'Alex', lastName: 'Johnson', phone: '+1 555-2001', isActive: true },
+    { restaurantId, email: 'emily.davis@example.com', password: 'customer123', firstName: 'Emily', lastName: 'Davis', phone: '+1 555-2002', isActive: true },
+    { restaurantId, email: 'chris.martin@example.com', password: 'customer123', firstName: 'Chris', lastName: 'Martin', phone: '+1 555-2003', isActive: true },
+    { restaurantId, email: 'lisa.anderson@example.com', password: 'customer123', firstName: 'Lisa', lastName: 'Anderson', phone: '+1 555-2004', isActive: true },
+    { restaurantId, email: 'david.lee@example.com', password: 'customer123', firstName: 'David', lastName: 'Lee', phone: '+1 555-2005', isActive: true },
+  ]);
+
+  const tables = await Table.find({ restaurantId });
+  const menuItems = await MenuItem.find({ restaurantId });
+  const statuses: Array<'received' | 'preparing' | 'ready' | 'served' | 'cancelled'> = ['received', 'preparing', 'ready', 'served', 'cancelled'];
+
+  for (let i = 0; i < 10; i++) {
+    const randomTable = tables[Math.floor(Math.random() * tables.length)];
+    const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
+    const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+    const itemCount = Math.floor(Math.random() * 3) + 1;
+
+    const orderItems = [];
+    let subtotal = 0;
+
+    for (let j = 0; j < itemCount; j++) {
+      const randomItem = menuItems[Math.floor(Math.random() * menuItems.length)];
+      const quantity = Math.floor(Math.random() * 2) + 1;
+      const itemSubtotal = randomItem.price * quantity;
+
+      orderItems.push({
+        menuItemId: randomItem._id,
+        name: randomItem.name,
+        price: randomItem.price,
+        quantity,
+        subtotal: itemSubtotal,
+      });
+
+      subtotal += itemSubtotal;
+    }
+
+    const tax = subtotal * 0.095;
+    const total = subtotal + tax;
+
+    await Order.create({
+      restaurantId,
+      tableId: randomTable._id,
+      tableNumber: randomTable.tableNumber,
+      customerId: randomCustomer._id,
+      items: orderItems,
+      subtotal,
+      tax,
+      total,
+      status: randomStatus,
+      statusHistory: [{ status: randomStatus, timestamp: new Date() }],
+      createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
+    });
+  }
+
+  console.log('      ✓ Burger Barn seeded');
+}
+
+// Seed Sushi Spot
+async function seedSushiSpot(restaurantId: mongoose.Types.ObjectId) {
+  console.log('   🍣 Seeding Sushi Spot...');
+
+  const categories = await Category.insertMany([
+    { restaurantId, name: 'Nigiri', description: 'Hand-pressed sushi', displayOrder: 1, isActive: true },
+    { restaurantId, name: 'Rolls', description: 'Sushi rolls', displayOrder: 2, isActive: true },
+    { restaurantId, name: 'Sashimi', description: 'Fresh raw fish', displayOrder: 3, isActive: true },
+    { restaurantId, name: 'Appetizers', description: 'Japanese starters', displayOrder: 4, isActive: true },
+    { restaurantId, name: 'Desserts', description: 'Japanese sweets', displayOrder: 5, isActive: true },
+    { restaurantId, name: 'Beverages', description: 'Japanese drinks', displayOrder: 6, isActive: true },
+  ]);
+
+  const catMap: any = {};
+  categories.forEach(cat => catMap[cat.name] = cat._id);
+
+  await MenuItem.insertMany([
+    // Nigiri
+    { restaurantId, categoryId: catMap['Nigiri'], name: 'Salmon Nigiri', description: 'Fresh salmon on rice', price: 4.99, isAvailable: true, preparationTime: 8 },
+    { restaurantId, categoryId: catMap['Nigiri'], name: 'Tuna Nigiri', description: 'Fresh tuna on rice', price: 5.99, isAvailable: true, preparationTime: 8 },
+    { restaurantId, categoryId: catMap['Nigiri'], name: 'Eel Nigiri', description: 'Grilled eel on rice', price: 6.99, isAvailable: true, preparationTime: 10 },
+    { restaurantId, categoryId: catMap['Nigiri'], name: 'Shrimp Nigiri', description: 'Cooked shrimp on rice', price: 4.49, isAvailable: true, preparationTime: 8 },
+    // Rolls
+    { restaurantId, categoryId: catMap['Rolls'], name: 'California Roll', description: 'Crab, avocado, cucumber', price: 8.99, isAvailable: true, preparationTime: 12 },
+    { restaurantId, categoryId: catMap['Rolls'], name: 'Spicy Tuna Roll', description: 'Tuna with spicy mayo', price: 10.99, isAvailable: true, preparationTime: 12 },
+    { restaurantId, categoryId: catMap['Rolls'], name: 'Dragon Roll', description: 'Eel and avocado', price: 14.99, isAvailable: true, preparationTime: 15 },
+    { restaurantId, categoryId: catMap['Rolls'], name: 'Philadelphia Roll', description: 'Salmon, cream cheese, cucumber', price: 11.99, isAvailable: true, preparationTime: 12 },
+    { restaurantId, categoryId: catMap['Rolls'], name: 'Veggie Roll', description: 'Cucumber, avocado, carrot', price: 7.99, isAvailable: true, isVegetarian: true, isVegan: true, preparationTime: 10 },
+    // Sashimi
+    { restaurantId, categoryId: catMap['Sashimi'], name: 'Salmon Sashimi', description: '5 pieces of fresh salmon', price: 12.99, isAvailable: true, preparationTime: 10 },
+    { restaurantId, categoryId: catMap['Sashimi'], name: 'Tuna Sashimi', description: '5 pieces of fresh tuna', price: 14.99, isAvailable: true, preparationTime: 10 },
+    { restaurantId, categoryId: catMap['Sashimi'], name: 'Assorted Sashimi', description: 'Chef\'s selection of 9 pieces', price: 18.99, isAvailable: true, preparationTime: 12 },
+    // Appetizers
+    { restaurantId, categoryId: catMap['Appetizers'], name: 'Edamame', description: 'Steamed soybeans', price: 5.99, isAvailable: true, isVegetarian: true, isVegan: true, preparationTime: 8 },
+    { restaurantId, categoryId: catMap['Appetizers'], name: 'Gyoza', description: 'Pan-fried dumplings', price: 7.99, isAvailable: true, preparationTime: 10 },
+    { restaurantId, categoryId: catMap['Appetizers'], name: 'Miso Soup', description: 'Traditional Japanese soup', price: 3.99, isAvailable: true, isVegetarian: true, preparationTime: 5 },
+    // Desserts
+    { restaurantId, categoryId: catMap['Desserts'], name: 'Mochi Ice Cream', description: 'Japanese ice cream dessert', price: 6.99, isAvailable: true, isVegetarian: true, preparationTime: 5 },
+    { restaurantId, categoryId: catMap['Desserts'], name: 'Green Tea Cheesecake', description: 'Matcha flavored cheesecake', price: 7.99, isAvailable: true, isVegetarian: true, preparationTime: 5 },
+    // Beverages
+    { restaurantId, categoryId: catMap['Beverages'], name: 'Green Tea', description: 'Hot or iced', price: 2.99, isAvailable: true, isVegan: true, preparationTime: 3 },
+    { restaurantId, categoryId: catMap['Beverages'], name: 'Sake', description: 'Japanese rice wine', price: 8.99, isAvailable: true, isVegan: true, preparationTime: 3 },
+  ]);
+
+  await Table.insertMany(
+    Array.from({ length: 10 }, (_, i) => ({
+      restaurantId,
+      tableNumber: `S${i + 1}`,
+      capacity: i % 3 === 0 ? 6 : i % 2 === 0 ? 4 : 2,
+      location: i < 4 ? 'Sushi Bar' : i < 8 ? 'Main Dining' : 'Private Room',
+      isActive: true,
+      isOccupied: i < 2,
+    }))
+  );
+
+  const customers = await Customer.insertMany([
+    { restaurantId, email: 'kenji.sato@example.com', password: 'customer123', firstName: 'Kenji', lastName: 'Sato', phone: '+1 555-3001', isActive: true },
+    { restaurantId, email: 'maya.kim@example.com', password: 'customer123', firstName: 'Maya', lastName: 'Kim', phone: '+1 555-3002', isActive: true },
+    { restaurantId, email: 'ryan.chen@example.com', password: 'customer123', firstName: 'Ryan', lastName: 'Chen', phone: '+1 555-3003', isActive: true },
+    { restaurantId, email: 'sophia.wang@example.com', password: 'customer123', firstName: 'Sophia', lastName: 'Wang', phone: '+1 555-3004', isActive: true },
+    { restaurantId, email: 'james.park@example.com', password: 'customer123', firstName: 'James', lastName: 'Park', phone: '+1 555-3005', isActive: true },
+  ]);
+
+  const tables = await Table.find({ restaurantId });
+  const menuItems = await MenuItem.find({ restaurantId });
+  const statuses: Array<'received' | 'preparing' | 'ready' | 'served' | 'cancelled'> = ['received', 'preparing', 'ready', 'served', 'cancelled'];
+
+  for (let i = 0; i < 15; i++) {
+    const randomTable = tables[Math.floor(Math.random() * tables.length)];
+    const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
+    const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+    const itemCount = Math.floor(Math.random() * 4) + 1;
+
+    const orderItems = [];
+    let subtotal = 0;
+
+    for (let j = 0; j < itemCount; j++) {
+      const randomItem = menuItems[Math.floor(Math.random() * menuItems.length)];
+      const quantity = Math.floor(Math.random() * 2) + 1;
+      const itemSubtotal = randomItem.price * quantity;
+
+      orderItems.push({
+        menuItemId: randomItem._id,
+        name: randomItem.name,
+        price: randomItem.price,
+        quantity,
+        subtotal: itemSubtotal,
+      });
+
+      subtotal += itemSubtotal;
+    }
+
+    const tax = subtotal * 0.101;
+    const total = subtotal + tax;
+
+    await Order.create({
+      restaurantId,
+      tableId: randomTable._id,
+      tableNumber: randomTable.tableNumber,
+      customerId: randomCustomer._id,
+      items: orderItems,
+      subtotal,
+      tax,
+      total,
+      status: randomStatus,
+      statusHistory: [{ status: randomStatus, timestamp: new Date() }],
+      createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000),
+    });
+  }
+
+  console.log('      ✓ Sushi Spot seeded');
+}
+
+// Export for use in other scripts
+export default seedMultiTenant;
+
+// Run if executed directly
+if (require.main === module) {
+  seedMultiTenant()
+    .then(() => {
+      console.log('✨ Script completed successfully');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('💥 Script failed:', error);
+      process.exit(1);
+    });
+}

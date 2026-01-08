@@ -106,7 +106,7 @@ PORT=5000
 # ============================================
 # DATABASE
 # ============================================
-MONGODB_URI=mongodb://localhost:27017/patlinks
+MONGODB_URI=mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0
 
 # ============================================
 # JWT SECRETS
@@ -560,7 +560,7 @@ node test-bulk-operations.js
 
 2. Check connection string in `.env`:
    ```env
-   MONGODB_URI=mongodb://localhost:27017/patlinks
+   MONGODB_URI=mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0
    ```
 
 3. Verify MongoDB is accessible:

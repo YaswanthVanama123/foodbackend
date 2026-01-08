@@ -391,7 +391,7 @@ NODE_ENV=development
 PORT=5000
 
 # Database
-MONGODB_URI=mongodb://localhost:27017/patlinks
+MONGODB_URI=mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0
 
 # JWT
 JWT_SECRET=your-secret-key

@@ -18,7 +18,7 @@ const Order = require('../dist/modules/common/models/Order').default;
 const Customer = require('../dist/modules/common/models/Customer').default;
 const AuditLog = require('../dist/modules/common/models/AuditLog').default;
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/patlinks';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0';
 
 /**
  * Complete Database Seed Script

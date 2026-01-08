@@ -196,7 +196,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
     // If customer is authenticated, add customerId to order
     if (req.customer) {
       orderData.customerId = req.customer._id;
-      console.log(`✓ Order created by authenticated customer: ${req.customer.email}`);
+      console.log(`✓ Order created by authenticated customer: ${req.customer.username}`);
     } else {
       console.log('✓ Order created by guest user');
     }

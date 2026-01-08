@@ -1,7 +1,6 @@
 import express, { Application } from 'express';
 import http from 'http';
 import dotenv from 'dotenv';
-import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
@@ -54,6 +53,9 @@ import {
   auditRoutes,
 } from './modules/superadmin';
 
+// Import public routes from common module
+import publicRoutes from './modules/common/routes/publicRoutes';
+
 // Create Express app
 const app: Application = express();
 const PORT = process.env.PORT || 5000;
@@ -100,13 +102,21 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/customers/login', authLimiter);
 app.use('/api/customers/register', authLimiter);
 
-// CORS Configuration
-const corsOptions = {
-  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5173', 'http://localhost:5174'],
-  credentials: true,
-  optionsSuccessStatus: 200,
-};
-app.use(cors(corsOptions));
+// Manual CORS headers - No CORS package, direct header control
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', '*');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Expose-Headers', '*');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+
+  next();
+});
 
 // Compression Middleware (gzip)
 app.use(compression({
@@ -160,6 +170,10 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
  * Tenant Routes (Require subdomain extraction):
  * - All other /api/* routes require restaurant context
  */
+
+// Public Routes (NO authentication or tenant context required)
+// These routes are used for initial restaurant lookup before login
+app.use('/api/public', publicRoutes);
 
 // Super Admin Routes (NO tenant middleware - operates at platform level)
 app.use('/api/super-admin', superAdminRoutes);

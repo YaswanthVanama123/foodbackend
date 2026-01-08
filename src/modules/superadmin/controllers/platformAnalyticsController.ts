@@ -117,8 +117,8 @@ export const getPlatformRevenue = async (req: Request, res: Response): Promise<v
       ? ((periodRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100
       : periodRevenue > 0 ? 100 : 0;
 
-    // Get daily revenue data for the period
-    const dailyData = await Restaurant.aggregate([
+    // Get daily revenue data for the period (simplified - just group by plan for now)
+    const subscriptionsByPlan = await Restaurant.aggregate([
       {
         $match: {
           'subscription.status': 'active',
@@ -130,71 +130,39 @@ export const getPlatformRevenue = async (req: Request, res: Response): Promise<v
         }
       },
       {
-        $project: {
-          plan: '$subscription.plan',
-          startDate: '$subscription.startDate',
-          dates: {
-            $map: {
-              input: { $range: [0, { $divide: [{ $subtract: [end, start] }, 86400000] }] },
-              as: 'day',
-              in: {
-                $dateToString: {
-                  format: '%Y-%m-%d',
-                  date: { $add: [start, { $multiply: ['$$day', 86400000] }] }
-                }
-              }
-            }
-          }
-        }
-      },
-      {
-        $unwind: '$dates'
-      },
-      {
         $group: {
-          _id: {
-            date: '$dates',
-            plan: '$plan'
-          },
-          subscriptionCount: { $sum: 1 }
+          _id: '$subscription.plan',
+          count: { $sum: 1 }
         }
-      },
-      {
-        $group: {
-          _id: '$_id.date',
-          subscriptions: {
-            $push: {
-              plan: '$_id.plan',
-              count: '$subscriptionCount'
-            }
-          },
-          totalSubscriptions: { $sum: '$subscriptionCount' }
-        }
-      },
-      {
-        $sort: { _id: 1 }
       }
     ]);
 
-    // Transform daily data to include revenue
-    const data = dailyData.map((day) => {
-      let revenue = 0;
-      const subscriptionCounts: Record<string, number> = {};
+    // Generate daily data points for the chart
+    const dailyData: any[] = [];
+    const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 
-      day.subscriptions.forEach((sub: any) => {
-        const plan = sub.plan as keyof typeof SUBSCRIPTION_PRICING;
+    for (let i = 0; i <= daysDiff; i++) {
+      const currentDate = new Date(start.getTime() + i * 24 * 60 * 60 * 1000);
+      const dateStr = currentDate.toISOString().split('T')[0];
+
+      // Calculate revenue for this date based on active subscriptions
+      let dailyRevenue = 0;
+      const subscriptionsByPlanMap: any = {};
+
+      subscriptionsByPlan.forEach((sub) => {
+        const plan = sub._id as keyof typeof SUBSCRIPTION_PRICING;
         const pricing = SUBSCRIPTION_PRICING[plan] || 0;
-        revenue += pricing * sub.count;
-        subscriptionCounts[plan] = sub.count;
+        dailyRevenue += (pricing / 30) * sub.count; // Daily revenue (monthly / 30)
+        subscriptionsByPlanMap[plan] = sub.count;
       });
 
-      return {
-        date: day._id,
-        revenue: Math.round(revenue * 100) / 100,
-        subscriptionCount: day.totalSubscriptions,
-        subscriptionsByPlan: subscriptionCounts
-      };
-    });
+      dailyData.push({
+        date: dateStr,
+        revenue: Math.round(dailyRevenue * 100) / 100,
+        subscriptionCount: subscriptionsByPlan.reduce((sum, sub) => sum + sub.count, 0),
+        subscriptionsByPlan: subscriptionsByPlanMap
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -207,7 +175,7 @@ export const getPlatformRevenue = async (req: Request, res: Response): Promise<v
           startDate: start.toISOString(),
           endDate: end.toISOString(),
         },
-        data,
+        data: dailyData,
       },
     });
   } catch (error: any) {

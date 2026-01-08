@@ -10,7 +10,7 @@ import Order from '../models/Order';
 // Load environment variables
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/patlinks';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0';
 
 /**
  * Migration Script: Single-Tenant to Multi-Tenant

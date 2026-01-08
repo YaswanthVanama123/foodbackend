@@ -61,6 +61,11 @@ export const extractTenant = async (
       return next();
     }
 
+    // Skip tenant extraction for public routes
+    if (req.path.startsWith('/public')) {
+      return next();
+    }
+
     // Skip for health check and root API endpoint
     if (req.path === '/health' || req.path === '/' || req.path === '') {
       return next();

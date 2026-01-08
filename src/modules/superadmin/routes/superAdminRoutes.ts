@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
   superAdminLogin,
+  superAdminRegister,
+  getCurrentSuperAdmin,
   getRestaurants,
   createRestaurant,
   getRestaurantById,
@@ -10,6 +12,12 @@ import {
   createRestaurantAdmin,
   getRestaurantAdmins,
   getGlobalAnalytics,
+  getAllAdmins,
+  getAdminById,
+  updateAdmin,
+  deleteAdmin,
+  toggleAdminStatus,
+  resetAdminPassword,
 } from '../controllers/superAdminController';
 import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
@@ -17,9 +25,16 @@ const router = Router();
 
 /**
  * Super Admin Authentication Routes
- * No authentication required for login
+ * No authentication required for login/register
  */
+router.post('/auth/register', superAdminRegister);
 router.post('/auth/login', superAdminLogin);
+
+/**
+ * Super Admin Profile Routes
+ * Authentication required
+ */
+router.get('/auth/me', superAdminAuth, getCurrentSuperAdmin);
 
 /**
  * Restaurant Management Routes
@@ -60,5 +75,31 @@ router.get('/restaurants/:restaurantId/admins', superAdminAuth, getRestaurantAdm
 
 // Get global platform analytics
 router.get('/analytics/global', superAdminAuth, getGlobalAnalytics);
+
+/**
+ * Admin Management Routes (Global)
+ * Manage all restaurant admins across platform
+ */
+
+// Get all admins across all restaurants
+router.get('/admins', superAdminAuth, getAllAdmins);
+
+// Create admin (with restaurantId in body)
+router.post('/admins', superAdminAuth, createRestaurantAdmin);
+
+// Get admin by ID
+router.get('/admins/:id', superAdminAuth, getAdminById);
+
+// Update admin
+router.put('/admins/:id', superAdminAuth, updateAdmin);
+
+// Delete admin
+router.delete('/admins/:id', superAdminAuth, deleteAdmin);
+
+// Toggle admin status
+router.patch('/admins/:id/status', superAdminAuth, toggleAdminStatus);
+
+// Reset admin password
+router.post('/admins/:id/reset-password', superAdminAuth, resetAdminPassword);
 
 export default router;

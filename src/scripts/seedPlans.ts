@@ -1,123 +1,108 @@
 import dotenv from 'dotenv';
-import connectDB from '../config/database';
-import Plan from '../models/Plan';
+import mongoose from 'mongoose';
+import Plan from '../modules/common/models/Plan';
 
 dotenv.config();
 
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0';
+
 /**
- * Plans Seed Script
+ * Seed Subscription Plans
  *
- * Creates 4 default subscription plans:
- * 1. Free - Limited features for trial users
- * 2. Basic - Small restaurants
- * 3. Pro - Medium to large restaurants
- * 4. Enterprise - Large chains with custom requirements
+ * Creates 3 subscription plans:
+ * - Starter: $29/month for small restaurants
+ * - Professional: $79/month for growing restaurants
+ * - Enterprise: $199/month for large chains
  */
 
-const seedPlans = async () => {
+async function connectDB() {
   try {
-    await connectDB();
+    await mongoose.connect(MONGODB_URI);
+    console.log('✅ Connected to MongoDB');
+  } catch (error) {
+    console.error('❌ MongoDB connection failed:', error);
+    throw error;
+  }
+}
 
-    console.log('╔═══════════════════════════════════════════════════════════╗');
+async function seedPlans() {
+  try {
+    console.log('\n╔═══════════════════════════════════════════════════════════╗');
     console.log('║                                                           ║');
-    console.log('║   🌱 Plans Seed Script                                   ║');
+    console.log('║   💳 Seeding Subscription Plans                          ║');
     console.log('║   Patlinks Food Ordering System                           ║');
     console.log('║                                                           ║');
     console.log('╚═══════════════════════════════════════════════════════════╝\n');
 
+    await connectDB();
+
     // Clear existing plans
     console.log('🗑️  Clearing existing plans...');
-    await Plan.deleteMany({});
-    console.log('   ✓ Existing plans cleared\n');
+    const deletedCount = await Plan.deleteMany({});
+    console.log(`   ✓ Deleted ${deletedCount.deletedCount} existing plans\n`);
 
-    // Create plans
-    console.log('📋 Creating subscription plans...\n');
-
+    // Define subscription plans
     const plans = [
       {
-        name: 'Free',
-        description: 'Perfect for getting started with basic restaurant management. Includes essential features to test the platform.',
-        price: 0,
+        name: 'Basic',
+        description: 'Perfect for small restaurants just getting started with digital ordering. Includes essential features to manage your restaurant efficiently.',
+        price: 29,
         currency: 'USD',
         billingCycle: 'monthly',
         features: [
-          'Up to 5 tables',
-          'Up to 20 menu items',
-          '1 admin user',
+          'Up to 20 tables',
+          'Up to 100 menu items',
+          'Up to 3 admin users',
           'Basic order management',
-          'Up to 100 orders per month',
-          'Standard support',
-          'Basic analytics',
+          'Real-time order tracking',
+          'Email notifications',
+          'Basic analytics dashboard',
+          'Standard support (48h response)',
+          'Mobile-responsive customer interface',
         ],
         limits: {
-          maxTables: 5,
-          maxMenuItems: 20,
-          maxAdmins: 1,
-          maxOrders: 100,
+          maxTables: 20,
+          maxMenuItems: 100,
+          maxAdmins: 3,
+          maxOrders: -1, // unlimited
         },
         isActive: true,
         displayOrder: 1,
       },
       {
-        name: 'Basic',
-        description: 'Great for small restaurants looking to digitize their operations. Get more tables, menu items, and premium features.',
-        price: 29.99,
+        name: 'Pro',
+        description: 'Ideal for growing restaurants that need advanced features and higher limits. Perfect for busy establishments with multiple staff members.',
+        price: 79,
         currency: 'USD',
         billingCycle: 'monthly',
         features: [
-          'Up to 15 tables',
-          'Up to 50 menu items',
-          'Up to 3 admin users',
-          'Advanced order management',
-          'Unlimited orders',
-          'Priority support',
-          'Advanced analytics',
+          'Up to 50 tables',
+          'Up to 300 menu items',
+          'Up to 10 admin users',
+          'All Basic features',
+          'Advanced analytics & reports',
           'Kitchen display system',
-          'Customer reviews',
-          'Custom branding',
+          'Customer reviews & ratings',
+          'Customizable branding',
+          'Bulk operations',
+          'Priority support (24h response)',
+          'SMS notifications',
+          'Export data (CSV, Excel)',
+          'Inventory tracking',
         ],
         limits: {
-          maxTables: 15,
-          maxMenuItems: 50,
-          maxAdmins: 3,
-          maxOrders: -1, // Unlimited
+          maxTables: 50,
+          maxMenuItems: 300,
+          maxAdmins: 10,
+          maxOrders: -1, // unlimited
         },
         isActive: true,
         displayOrder: 2,
       },
       {
-        name: 'Pro',
-        description: 'Ideal for medium to large restaurants with multiple locations or high order volume. Includes all features plus advanced capabilities.',
-        price: 79.99,
-        currency: 'USD',
-        billingCycle: 'monthly',
-        features: [
-          'Up to 50 tables',
-          'Up to 200 menu items',
-          'Up to 10 admin users',
-          'All Basic features',
-          'Multi-location support',
-          'Advanced analytics & reporting',
-          'Bulk operations',
-          'Export functionality',
-          'API access',
-          'Dedicated account manager',
-          'Custom integrations',
-          'Priority 24/7 support',
-        ],
-        limits: {
-          maxTables: 50,
-          maxMenuItems: 200,
-          maxAdmins: 10,
-          maxOrders: -1, // Unlimited
-        },
-        isActive: true,
-        displayOrder: 3,
-      },
-      {
         name: 'Enterprise',
-        description: 'For large restaurant chains and enterprises requiring unlimited resources, custom features, and white-label solutions.',
-        price: 199.99,
+        description: 'Complete solution for large restaurant chains and enterprises. Unlimited resources with premium support and custom integrations.',
+        price: 199,
         currency: 'USD',
         billingCycle: 'monthly',
         features: [
@@ -125,68 +110,78 @@ const seedPlans = async () => {
           'Unlimited menu items',
           'Unlimited admin users',
           'All Pro features',
+          'Multi-location management',
           'White-label solution',
-          'Custom domain',
+          'Custom domain support',
           'Advanced security features',
-          'SLA guarantee',
-          'Custom development',
-          'On-premise deployment option',
+          '99.9% uptime SLA',
+          'Dedicated account manager',
+          'Custom integrations',
+          'API access',
+          'Advanced reporting & business intelligence',
           'Training & onboarding',
-          'Dedicated support team',
-          'Custom contract terms',
+          'Premium 24/7 support (2h response)',
+          'Custom feature development',
         ],
         limits: {
           maxTables: 999999,
           maxMenuItems: 999999,
           maxAdmins: 999999,
-          maxOrders: -1, // Unlimited
+          maxOrders: -1, // unlimited
         },
         isActive: true,
-        displayOrder: 4,
+        displayOrder: 3,
       },
     ];
 
+    // Insert plans
+    console.log('💳 Creating subscription plans...\n');
     const createdPlans = await Plan.insertMany(plans);
 
-    console.log('✅ Plans created successfully:\n');
-
-    createdPlans.forEach((plan) => {
+    // Display created plans
+    for (const plan of createdPlans) {
       console.log(`📦 ${plan.name} Plan`);
-      console.log(`   Price: $${plan.price}/${plan.billingCycle}`);
-      console.log(`   Tables: ${plan.limits.maxTables === 999999 ? 'Unlimited' : plan.limits.maxTables}`);
-      console.log(`   Menu Items: ${plan.limits.maxMenuItems === 999999 ? 'Unlimited' : plan.limits.maxMenuItems}`);
-      console.log(`   Admins: ${plan.limits.maxAdmins === 999999 ? 'Unlimited' : plan.limits.maxAdmins}`);
-      console.log(`   Orders: ${plan.limits.maxOrders === -1 ? 'Unlimited' : plan.limits.maxOrders}`);
-      console.log(`   Features: ${plan.features.length} features`);
-      console.log(`   Status: ${plan.isActive ? 'Active' : 'Inactive'}`);
+      console.log(`   💰 Price: $${plan.price}/${plan.billingCycle}`);
+      console.log(`   📋 Description: ${plan.description.substring(0, 60)}...`);
+      console.log(`   🏢 Tables: ${plan.limits.maxTables === 999999 ? 'Unlimited' : plan.limits.maxTables}`);
+      console.log(`   🍽️  Menu Items: ${plan.limits.maxMenuItems === 999999 ? 'Unlimited' : plan.limits.maxMenuItems}`);
+      console.log(`   👥 Admins: ${plan.limits.maxAdmins === 999999 ? 'Unlimited' : plan.limits.maxAdmins}`);
+      console.log(`   ✨ Features: ${plan.features.length} features`);
+      console.log(`   ✅ Status: ${plan.isActive ? 'Active' : 'Inactive'}`);
       console.log('');
-    });
+    }
 
     console.log('╔═══════════════════════════════════════════════════════════╗');
     console.log('║                                                           ║');
-    console.log('║   ✅ Plans Seed Completed Successfully!                  ║');
+    console.log('║   ✅ Plans Seeded Successfully!                          ║');
     console.log('║                                                           ║');
     console.log('╚═══════════════════════════════════════════════════════════╝\n');
 
     console.log('📊 Summary:');
-    console.log(`   Total Plans: ${createdPlans.length}`);
+    console.log(`   Total Plans Created: ${createdPlans.length}`);
     console.log(`   Active Plans: ${createdPlans.filter(p => p.isActive).length}`);
-    console.log(`   Price Range: $${Math.min(...createdPlans.map(p => p.price))} - $${Math.max(...createdPlans.map(p => p.price))}\n`);
+    console.log(`   Price Range: $${Math.min(...createdPlans.map(p => p.price))} - $${Math.max(...createdPlans.map(p => p.price))} per month\n`);
 
-    console.log('🔗 API Endpoints:');
-    console.log('   GET    /api/superadmin/plans           - List all plans');
-    console.log('   GET    /api/superadmin/plans/:id       - Get plan by ID');
-    console.log('   POST   /api/superadmin/plans           - Create new plan');
-    console.log('   PUT    /api/superadmin/plans/:id       - Update plan');
-    console.log('   DELETE /api/superadmin/plans/:id       - Delete plan');
-    console.log('   PATCH  /api/superadmin/plans/:id/status - Toggle plan status\n');
-
-    process.exit(0);
+    await mongoose.connection.close();
+    console.log('🔌 Database connection closed\n');
   } catch (error) {
-    console.error('❌ Error seeding plans:', error);
-    process.exit(1);
+    console.error('\n❌ Error seeding plans:', error);
+    throw error;
   }
-};
+}
 
-// Run seed
-seedPlans();
+// Export for use in other scripts
+export default seedPlans;
+
+// Run if executed directly
+if (require.main === module) {
+  seedPlans()
+    .then(() => {
+      console.log('✨ Script completed successfully');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('💥 Script failed:', error);
+      process.exit(1);
+    });
+}

@@ -233,7 +233,7 @@ All scripts use CommonJS (`require`/`module.exports`) for Node.js compatibility 
 ### Required Environment Variables
 
 ```env
-MONGODB_URI=mongodb://localhost:27017/patlinks
+MONGODB_URI=mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0
 JWT_SECRET=your-secret-key
 PORT=5000
 ```

@@ -10,7 +10,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 // Import SuperAdmin model
 const SuperAdmin = require('../dist/modules/common/models/SuperAdmin').default;
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/patlinks';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0';
 
 /**
  * Create Super Admin Script

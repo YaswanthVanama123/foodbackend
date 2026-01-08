@@ -15,7 +15,7 @@ const AuditLog = require('../dist/modules/common/models/AuditLog').default;
 const Ticket = require('../dist/modules/common/models/Ticket').default;
 const Admin = require('../dist/modules/common/models/Admin').default;
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/patlinks';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0';
 
 /**
  * Test Data Generator Script
