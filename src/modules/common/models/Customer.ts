@@ -1,5 +1,11 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
+export interface ICustomerPreferences {
+  dietaryRestrictions: string[];
+  allergens: string[];
+  favoriteItems: Types.ObjectId[];
+}
+
 // Simplified Customer interface - Username only
 export interface ICustomer extends Document {
   _id: Types.ObjectId;
@@ -8,7 +14,31 @@ export interface ICustomer extends Document {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  preferences: ICustomerPreferences;
 }
+
+const preferencesSchema = new Schema<ICustomerPreferences>(
+  {
+    dietaryRestrictions: {
+      type: [String],
+      default: [],
+    },
+    allergens: {
+      type: [String],
+      default: [],
+    },
+    favoriteItems: {
+      type: [
+        {
+          type: Schema.Types.ObjectId,
+          ref: 'MenuItem',
+        },
+      ],
+      default: [],
+    },
+  },
+  { _id: false }
+);
 
 const customerSchema = new Schema<ICustomer>(
   {
@@ -29,6 +59,14 @@ const customerSchema = new Schema<ICustomer>(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    preferences: {
+      type: preferencesSchema,
+      default: () => ({
+        dietaryRestrictions: [],
+        allergens: [],
+        favoriteItems: [],
+      }),
     },
   },
   {
