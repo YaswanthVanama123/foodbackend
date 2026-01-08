@@ -1,0 +1,270 @@
+import { Request, Response } from 'express';
+import Order from '../common/models/Order';
+import { getSocketService } from '../common/services/socketService';
+
+// @desc    Get kitchen display orders (tenant-scoped)
+// @route   GET /api/kitchen/orders
+// @access  Private (Admin)
+export const getKitchenOrders = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orders = await Order.find({
+      restaurantId: req.restaurantId,
+      status: { $in: ['received', 'preparing', 'ready'] },
+    })
+      .populate('tableId', 'tableNumber location')
+      .sort({ createdAt: 1 }) // Oldest first (FIFO)
+      .lean()
+      .exec();
+
+    // Group by status for better kitchen display
+    const grouped = {
+      received: orders.filter((o) => o.status === 'received'),
+      preparing: orders.filter((o) => o.status === 'preparing'),
+      ready: orders.filter((o) => o.status === 'ready'),
+    };
+
+    res.status(200).json({
+      success: true,
+      data: grouped,
+      total: orders.length,
+    });
+  } catch (error: any) {
+    console.error('Get kitchen orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Mark order as started (received -> preparing) (tenant-scoped)
+// @route   PATCH /api/kitchen/orders/:id/start
+// @access  Private (Admin)
+export const startOrder = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    });
+
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: 'Order not found',
+      });
+      return;
+    }
+
+    if (order.status !== 'received') {
+      res.status(400).json({
+        success: false,
+        message: `Cannot start order with status: ${order.status}`,
+      });
+      return;
+    }
+
+    order.status = 'preparing';
+    order.statusHistory.push({
+      status: 'preparing',
+      timestamp: new Date(),
+      updatedBy: req.admin?._id,
+    });
+
+    await order.save();
+
+    // Emit Socket.io event to restaurant namespace
+    try {
+      const socketService = getSocketService();
+      const restaurantId = req.restaurantId!.toString();
+      socketService.emitOrderStatusUpdate(restaurantId, order.tableNumber, order);
+      socketService.emitOrderStatusChange(restaurantId, order);
+    } catch (socketError) {
+      console.error('Socket emit error (non-critical):', socketError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Order started',
+      data: order,
+    });
+  } catch (error: any) {
+    console.error('Start order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Mark order as ready (preparing -> ready) (tenant-scoped)
+// @route   PATCH /api/kitchen/orders/:id/ready
+// @access  Private (Admin)
+export const markOrderReady = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    });
+
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: 'Order not found',
+      });
+      return;
+    }
+
+    if (order.status !== 'preparing') {
+      res.status(400).json({
+        success: false,
+        message: `Cannot mark as ready. Current status: ${order.status}`,
+      });
+      return;
+    }
+
+    order.status = 'ready';
+    order.statusHistory.push({
+      status: 'ready',
+      timestamp: new Date(),
+      updatedBy: req.admin?._id,
+    });
+
+    await order.save();
+
+    // Emit Socket.io event to restaurant namespace
+    try {
+      const socketService = getSocketService();
+      const restaurantId = req.restaurantId!.toString();
+      socketService.emitOrderStatusUpdate(restaurantId, order.tableNumber, order);
+      socketService.emitOrderStatusChange(restaurantId, order);
+    } catch (socketError) {
+      console.error('Socket emit error (non-critical):', socketError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Order marked as ready',
+      data: order,
+    });
+  } catch (error: any) {
+    console.error('Mark order ready error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get kitchen statistics (tenant-scoped)
+// @route   GET /api/kitchen/stats
+// @access  Private (Admin)
+export const getKitchenStats = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const restaurantId = req.restaurantId!;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [
+      pendingOrders,
+      preparingOrders,
+      completedToday,
+      avgPrepTime,
+    ] = await Promise.all([
+      Order.countDocuments({ restaurantId, status: 'received' }),
+      Order.countDocuments({ restaurantId, status: 'preparing' }),
+      Order.countDocuments({ restaurantId, createdAt: { $gte: today }, status: 'served' }),
+      // Calculate average preparation time
+      Order.aggregate([
+        {
+          $match: {
+            restaurantId,
+            createdAt: { $gte: today },
+            status: 'served',
+            servedAt: { $exists: true },
+          },
+        },
+        {
+          $project: {
+            prepTime: {
+              $divide: [
+                { $subtract: ['$servedAt', '$createdAt'] },
+                60000, // Convert to minutes
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            avgPrepTime: { $avg: '$prepTime' },
+          },
+        },
+      ]),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        pendingOrders,
+        preparingOrders,
+        completedToday,
+        averagePreparationTime: avgPrepTime[0]?.avgPrepTime
+          ? Math.round(avgPrepTime[0].avgPrepTime)
+          : 0,
+      },
+    });
+  } catch (error: any) {
+    console.error('Get kitchen stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get order details for kitchen display (tenant-scoped)
+// @route   GET /api/kitchen/orders/:id
+// @access  Private (Admin)
+export const getKitchenOrderDetails = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    })
+      .populate('tableId', 'tableNumber location')
+      .lean()
+      .exec();
+
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: 'Order not found',
+      });
+      return;
+    }
+
+    // Calculate time since order was placed
+    const timeSinceOrder = Math.round(
+      (Date.now() - new Date(order.createdAt).getTime()) / 1000 / 60
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...order,
+        timeSinceOrder, // in minutes
+      },
+    });
+  } catch (error: any) {
+    console.error('Get kitchen order details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};

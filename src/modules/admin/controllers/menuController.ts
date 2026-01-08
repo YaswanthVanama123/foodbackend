@@ -1,0 +1,337 @@
+import { Request, Response } from 'express';
+import MenuItem from '../common/models/MenuItem';
+import path from 'path';
+import fs from 'fs';
+
+// @desc    Get all menu items (tenant-scoped)
+// @route   GET /api/menu
+// @access  Public
+export const getMenuItems = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { categoryId, available } = req.query;
+
+    // CRITICAL: Filter by restaurant
+    const filter: any = {
+      restaurantId: req.restaurantId,
+    };
+
+    if (categoryId) {
+      filter.categoryId = categoryId;
+    }
+
+    if (available === 'true') {
+      filter.isAvailable = true;
+    }
+
+    const menuItems = await MenuItem.find(filter)
+      .populate('categoryId', 'name')
+      .sort({ name: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: menuItems.length,
+      data: menuItems,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get menu items by category (tenant-scoped)
+// @route   GET /api/menu/category/:categoryId
+// @access  Public
+export const getMenuItemsByCategory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const menuItems = await MenuItem.find({
+      restaurantId: req.restaurantId,
+      categoryId: req.params.categoryId,
+      isAvailable: true,
+    }).populate('categoryId', 'name');
+
+    res.status(200).json({
+      success: true,
+      count: menuItems.length,
+      data: menuItems,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get menu item by ID (tenant-scoped)
+// @route   GET /api/menu/:id
+// @access  Public
+export const getMenuItemById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const menuItem = await MenuItem.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    }).populate('categoryId', 'name');
+
+    if (!menuItem) {
+      res.status(404).json({
+        success: false,
+        message: 'Menu item not found',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: menuItem,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Create menu item (tenant-scoped)
+// @route   POST /api/menu
+// @access  Private (Admin)
+export const createMenuItem = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const {
+      name,
+      description,
+      categoryId,
+      price,
+      isVegetarian,
+      isVegan,
+      isGlutenFree,
+      customizationOptions,
+      preparationTime,
+    } = req.body;
+
+    if (!name || !categoryId || price === undefined) {
+      res.status(400).json({
+        success: false,
+        message: 'Name, category, and price are required',
+      });
+      return;
+    }
+
+    // CRITICAL: Create with restaurantId
+    const menuItem = await MenuItem.create({
+      restaurantId: req.restaurantId,
+      name,
+      description,
+      categoryId,
+      price,
+      isVegetarian: isVegetarian || false,
+      isVegan: isVegan || false,
+      isGlutenFree: isGlutenFree || false,
+      customizationOptions: customizationOptions || [],
+      preparationTime,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: menuItem,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Update menu item (tenant-scoped)
+// @route   PUT /api/menu/:id
+// @access  Private (Admin)
+export const updateMenuItem = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const {
+      name,
+      description,
+      categoryId,
+      price,
+      isAvailable,
+      isVegetarian,
+      isVegan,
+      isGlutenFree,
+      customizationOptions,
+      preparationTime,
+    } = req.body;
+
+    // CRITICAL: Find with restaurantId validation
+    const menuItem = await MenuItem.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    });
+
+    if (!menuItem) {
+      res.status(404).json({
+        success: false,
+        message: 'Menu item not found',
+      });
+      return;
+    }
+
+    menuItem.name = name || menuItem.name;
+    menuItem.description = description !== undefined ? description : menuItem.description;
+    menuItem.categoryId = categoryId || menuItem.categoryId;
+    menuItem.price = price !== undefined ? price : menuItem.price;
+    menuItem.isAvailable = isAvailable !== undefined ? isAvailable : menuItem.isAvailable;
+    menuItem.isVegetarian = isVegetarian !== undefined ? isVegetarian : menuItem.isVegetarian;
+    menuItem.isVegan = isVegan !== undefined ? isVegan : menuItem.isVegan;
+    menuItem.isGlutenFree = isGlutenFree !== undefined ? isGlutenFree : menuItem.isGlutenFree;
+    menuItem.customizationOptions = customizationOptions || menuItem.customizationOptions;
+    menuItem.preparationTime = preparationTime !== undefined ? preparationTime : menuItem.preparationTime;
+
+    await menuItem.save();
+
+    res.status(200).json({
+      success: true,
+      data: menuItem,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Delete menu item (tenant-scoped)
+// @route   DELETE /api/menu/:id
+// @access  Private (Admin)
+export const deleteMenuItem = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // CRITICAL: Find with restaurantId validation
+    const menuItem = await MenuItem.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    });
+
+    if (!menuItem) {
+      res.status(404).json({
+        success: false,
+        message: 'Menu item not found',
+      });
+      return;
+    }
+
+    // Delete image file if exists
+    if (menuItem.image) {
+      const imagePath = path.join(process.cwd(), menuItem.image);
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
+    }
+
+    await menuItem.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: 'Menu item deleted successfully',
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Toggle menu item availability (tenant-scoped)
+// @route   PATCH /api/menu/:id/availability
+// @access  Private (Admin)
+export const toggleAvailability = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // CRITICAL: Find with restaurantId validation
+    const menuItem = await MenuItem.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    });
+
+    if (!menuItem) {
+      res.status(404).json({
+        success: false,
+        message: 'Menu item not found',
+      });
+      return;
+    }
+
+    menuItem.isAvailable = !menuItem.isAvailable;
+    await menuItem.save();
+
+    res.status(200).json({
+      success: true,
+      data: menuItem,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Upload menu item image (tenant-scoped)
+// @route   POST /api/menu/:id/image
+// @access  Private (Admin)
+export const uploadImage = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // CRITICAL: Find with restaurantId validation
+    const menuItem = await MenuItem.findOne({
+      _id: req.params.id,
+      restaurantId: req.restaurantId,
+    });
+
+    if (!menuItem) {
+      res.status(404).json({
+        success: false,
+        message: 'Menu item not found',
+      });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({
+        success: false,
+        message: 'No image file uploaded',
+      });
+      return;
+    }
+
+    // Delete old image if exists
+    if (menuItem.image) {
+      const oldImagePath = path.join(process.cwd(), menuItem.image);
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    // Update image path
+    menuItem.image = `/uploads/menu-items/${req.file.filename}`;
+    await menuItem.save();
+
+    res.status(200).json({
+      success: true,
+      data: menuItem,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
