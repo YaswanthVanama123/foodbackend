@@ -1,4 +1,4 @@
-import * as multer from 'multer';
+import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Request } from 'express';
@@ -21,7 +21,7 @@ const ensureDirectoryExists = (dirPath: string): void => {
  * Files are stored in uploads/{restaurantId}/
  */
 const tenantStorage = multer.diskStorage({
-  destination: (req: Request, file: Express.Multer.File, cb) => {
+  destination: (req: Request, _file: Express.Multer.File, cb) => {
     // Extract restaurantId from tenant context
     const restaurantId = req.restaurantId?.toString() || 'default';
     const uploadPath = path.join(BASE_UPLOAD_DIR, restaurantId);
@@ -31,7 +31,7 @@ const tenantStorage = multer.diskStorage({
 
     cb(null, uploadPath);
   },
-  filename: (req: Request, file: Express.Multer.File, cb) => {
+  filename: (_req: Request, file: Express.Multer.File, cb) => {
     // Generate unique filename: timestamp-randomstring.ext
     const timestamp = Date.now();
     const randomString = crypto.randomBytes(8).toString('hex');
@@ -47,7 +47,7 @@ const tenantStorage = multer.diskStorage({
  * Allowed formats: jpg, jpeg, png, gif, webp
  */
 const imageFileFilter = (
-  req: Request,
+  _req: Request,
   file: Express.Multer.File,
   cb: multer.FileFilterCallback
 ): void => {
@@ -113,12 +113,12 @@ export const uploadMultipleImages = multer({
  * Stores in uploads/menu-items/ without tenant scoping
  */
 const menuItemStorage = multer.diskStorage({
-  destination: (req: Request, file: Express.Multer.File, cb) => {
+  destination: (_req: Request, _file: Express.Multer.File, cb) => {
     const menuItemsDir = path.join(BASE_UPLOAD_DIR, 'menu-items');
     ensureDirectoryExists(menuItemsDir);
     cb(null, menuItemsDir);
   },
-  filename: (req: Request, file: Express.Multer.File, cb) => {
+  filename: (_req: Request, file: Express.Multer.File, cb) => {
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(file.originalname);
     cb(null, `menu-item-${uniqueSuffix}${ext}`);
@@ -175,9 +175,9 @@ export const getFileSize = (filePath: string): number | null => {
  * Can be extended to use sharp or jimp for image processing
  */
 export const validateImageDimensions = async (
-  filePath: string,
-  maxWidth?: number,
-  maxHeight?: number
+  _filePath: string,
+  _maxWidth?: number,
+  _maxHeight?: number
 ): Promise<boolean> => {
   // Placeholder for image dimension validation
   // In production, use libraries like 'sharp' or 'jimp'

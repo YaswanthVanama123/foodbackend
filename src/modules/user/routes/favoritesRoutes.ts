@@ -1,5 +1,5 @@
 import express from 'express';
-import { customerAuthMiddleware } from '../common/middleware/authMiddleware';
+import { customerAuthMiddleware } from '../../common/middleware/authMiddleware';
 import {
   addFavorite,
   removeFavorite,

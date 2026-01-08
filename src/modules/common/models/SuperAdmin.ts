@@ -95,8 +95,7 @@ const superAdminSchema = new Schema<ISuperAdmin>({
 });
 
 // Indexes
-superAdminSchema.index({ username: 1 });
-superAdminSchema.index({ email: 1 });
+// Note: username and email already have unique indexes from field definitions
 superAdminSchema.index({ isActive: 1 });
 
 // Pre-save hook to hash password
@@ -141,9 +140,9 @@ superAdminSchema.methods.hasPermission = function(permission: string): boolean {
 // Ensure virtuals are included when converting to JSON
 superAdminSchema.set('toJSON', {
   virtuals: true,
-  transform: function(doc, ret) {
-    delete ret.password;
-    return ret;
+  transform: function(_doc, ret) {
+    const { password: _, ...adminWithoutPassword } = ret;
+    return adminWithoutPassword;
   },
 });
 

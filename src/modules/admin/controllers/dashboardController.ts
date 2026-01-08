@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Order from '../common/models/Order';
+import Order from '../../common/models/Order';
 import mongoose from 'mongoose';
 
 /**

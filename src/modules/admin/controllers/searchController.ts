@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import Order from '../common/models/Order';
-import MenuItem from '../common/models/MenuItem';
-import Category from '../common/models/Category';
+import Order from '../../common/models/Order';
+import MenuItem from '../../common/models/MenuItem';
 
 // @desc    Search menu items (tenant-scoped)
 // @route   GET /api/search/menu

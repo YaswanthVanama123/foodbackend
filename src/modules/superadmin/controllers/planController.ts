@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Plan from '../common/models/Plan';
+import Plan from '../../common/models/Plan';
 
 // @desc    Get all plans (active and inactive)
 // @route   GET /api/superadmin/plans

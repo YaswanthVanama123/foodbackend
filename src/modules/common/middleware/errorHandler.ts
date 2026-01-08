@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 
-export const errorHandler = (err: any, req: Request, res: Response, next: NextFunction): void => {
+export const errorHandler = (err: any, _req: Request, res: Response, _next: NextFunction): void => {
   console.error('Error:', err);
 
   // Mongoose validation error

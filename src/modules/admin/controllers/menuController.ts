@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import MenuItem from '../common/models/MenuItem';
+import MenuItem from '../../common/models/MenuItem';
 import path from 'path';
 import fs from 'fs';
 

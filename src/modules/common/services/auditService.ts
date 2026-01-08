@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import AuditLog, { IAuditLog } from './models/AuditLog';
+import AuditLog, { IAuditLog } from '../models/AuditLog';
 import { Parser } from 'json2csv';
 
 // Interface for actor information
@@ -345,7 +345,7 @@ class AuditService {
       const recent = await AuditLog.find(query)
         .sort('-timestamp')
         .limit(10)
-        .lean();
+        .lean() as unknown as IAuditLog[];
 
       return {
         total,

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
-import { deleteFile, fileExists, getFileSize } from '../common/middleware/uploadMiddleware';
+import { deleteFile, fileExists, getFileSize } from '../../common/middleware/uploadMiddleware';
 
 // Base upload directory
 const BASE_UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';

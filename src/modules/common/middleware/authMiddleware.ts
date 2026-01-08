@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import Admin from './models/Admin';
-import SuperAdmin from './models/SuperAdmin';
-import Customer from './models/Customer';
-import { jwtConfig } from './config/jwt';
+import Admin from '../models/Admin';
+import SuperAdmin from '../models/SuperAdmin';
+import Customer from '../models/Customer';
+import { jwtConfig } from '../config/jwt';
 
 // JWT Payload structure for multi-tenant
 interface JwtPayload {
@@ -421,7 +421,7 @@ export const customerAuthMiddleware = async (
  */
 export const optionalCustomerAuth = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {

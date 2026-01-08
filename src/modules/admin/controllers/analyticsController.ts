@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
-import Order from '../common/models/Order';
-import MenuItem from '../common/models/MenuItem';
-import Category from '../common/models/Category';
-import Table from '../common/models/Table';
-import mongoose from 'mongoose';
+import Order from '../../common/models/Order';
+import MenuItem from '../../common/models/MenuItem';
+import Category from '../../common/models/Category';
 
 // @desc    Get revenue analytics (tenant-scoped)
 // @route   GET /api/analytics/revenue

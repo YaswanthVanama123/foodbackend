@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import Order from '../common/models/Order';
-import Table from '../common/models/Table';
+import Order from '../../common/models/Order';
+import Table from '../../common/models/Table';
 import {
   calculateOrderTotals,
   calculateItemSubtotal,
@@ -8,8 +8,8 @@ import {
   getOrdersByTable,
   updateOrderStatus as updateOrderStatusService,
   getDashboardStats,
-} from '../common/services/orderService';
-import { getSocketService } from '../common/services/socketService';
+} from '../../common/services/orderService';
+import { getSocketService } from '../../common/services/socketService';
 
 // @desc    Get all orders (tenant-scoped)
 // @route   GET /api/orders

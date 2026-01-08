@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import Admin from '../common/models/Admin';
-import { jwtConfig } from '../common/config/jwt';
+import Admin from '../../common/models/Admin';
+import { jwtConfig } from '../../common/config/jwt';
 
 // Generate JWT token for restaurant admin
 const generateToken = (adminId: string, restaurantId: string): string => {
@@ -9,12 +9,10 @@ const generateToken = (adminId: string, restaurantId: string): string => {
     {
       id: adminId,
       restaurantId: restaurantId,
-      type: 'admin',
+      type: 'admin' as const,
     },
     jwtConfig.secret,
-    {
-      expiresIn: jwtConfig.accessTokenExpire,
-    }
+    { expiresIn: jwtConfig.accessTokenExpire } as any
   );
 };
 
@@ -24,12 +22,10 @@ const generateRefreshToken = (adminId: string, restaurantId: string): string => 
     {
       id: adminId,
       restaurantId: restaurantId,
-      type: 'admin',
+      type: 'admin' as const,
     },
     jwtConfig.refreshSecret,
-    {
-      expiresIn: jwtConfig.refreshTokenExpire,
-    }
+    { expiresIn: jwtConfig.refreshTokenExpire } as any
   );
 };
 
@@ -102,14 +98,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const token = generateToken(admin._id.toString(), admin.restaurantId.toString());
     const refreshToken = generateRefreshToken(admin._id.toString(), admin.restaurantId.toString());
 
-    // Remove password from response
+    // Remove password from response using object destructuring
     const adminData = admin.toObject();
-    delete adminData.password;
+    const { password: _, ...adminWithoutPassword } = adminData;
 
     res.status(200).json({
       success: true,
       data: {
-        admin: adminData,
+        admin: adminWithoutPassword,
         restaurant: req.tenant, // Include restaurant info
         token,
         refreshToken,
@@ -151,7 +147,7 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
 // @desc    Logout admin
 // @route   POST /api/auth/logout
 // @access  Private
-export const logout = async (req: Request, res: Response): Promise<void> => {
+export const logout = async (_req: Request, res: Response): Promise<void> => {
   try {
     // Note: With JWT, logout is handled on the client side by removing the token
     // This endpoint is mainly for consistency and future enhancements (e.g., token blacklisting)

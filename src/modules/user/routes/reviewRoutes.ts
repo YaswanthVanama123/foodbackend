@@ -11,8 +11,8 @@ import {
   addRestaurantResponse,
   toggleReviewVisibility,
 } from '../controllers/reviewController';
-import { authMiddleware, customerAuthMiddleware, optionalCustomerAuth } from '../common/middleware/authMiddleware';
-import { handleValidationErrors } from '../common/middleware/validationMiddleware';
+import { authMiddleware, customerAuthMiddleware } from '../../common/middleware/authMiddleware';
+import { handleValidationErrors } from '../../common/middleware/validationMiddleware';
 import {
   createReviewValidator,
   updateReviewValidator,
@@ -21,7 +21,7 @@ import {
   reviewQueryValidator,
   mongoIdValidator,
   paginationValidator,
-} from '../common/utils/validators';
+} from '../../common/utils/validators';
 
 const reviewsRouter = express.Router();
 

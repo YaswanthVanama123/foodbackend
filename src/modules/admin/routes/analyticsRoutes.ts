@@ -8,7 +8,7 @@ import {
   getPreparationTime,
   getDashboardAnalytics,
 } from '../controllers/analyticsController';
-import { authMiddleware } from '../common/middleware/authMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
 
 const router = express.Router();
 

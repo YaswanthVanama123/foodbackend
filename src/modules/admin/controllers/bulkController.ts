@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import MenuItem from '../common/models/MenuItem';
-import Category from '../common/models/Category';
-import Table from '../common/models/Table';
-import Order from '../common/models/Order';
+import MenuItem from '../../common/models/MenuItem';
+import Category from '../../common/models/Category';
+import Table from '../../common/models/Table';
+import Order from '../../common/models/Order';
 
 // @desc    Bulk update menu item availability (tenant-scoped)
 // @route   PATCH /api/bulk/menu/availability

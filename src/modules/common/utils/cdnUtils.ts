@@ -10,7 +10,7 @@ import {
   IMAGE_SIZE_PRESETS,
   ImageTransformation,
   CDNConfig
-} from './config/cdn.config';
+} from '../config/cdn.config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';

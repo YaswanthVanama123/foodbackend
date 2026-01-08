@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import Order from '../common/models/Order';
-import MenuItem, { IMenuItem } from '../common/models/MenuItem';
-import Table from '../common/models/Table';
-import { calculateOrderTotals, calculateItemSubtotal } from '../common/services/orderService';
+import Order from '../../common/models/Order';
+import MenuItem, { IMenuItem } from '../../common/models/MenuItem';
+import Table from '../../common/models/Table';
+import { calculateOrderTotals, calculateItemSubtotal } from '../../common/services/orderService';
 import { Types } from 'mongoose';
 
 /**
@@ -199,13 +199,8 @@ export const reorder = async (req: Request, res: Response): Promise<void> => {
       }
       targetTableId = new Types.ObjectId(tableId);
     } else {
-      // Use customer's current table if available
-      if (req.customer?.tableId) {
-        targetTableId = req.customer.tableId;
-      } else {
-        // Use original order's table as fallback
-        targetTableId = originalOrder.tableId;
-      }
+      // Use original order's table as fallback
+      targetTableId = originalOrder.tableId;
     }
 
     // Verify table exists and belongs to restaurant

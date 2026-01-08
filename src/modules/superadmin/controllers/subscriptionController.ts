@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import Subscription from '../common/models/Subscription';
-import Restaurant from '../common/models/Restaurant';
+import Subscription from '../../common/models/Subscription';
+import Restaurant from '../../common/models/Restaurant';
 import { Types } from 'mongoose';
 
 /**
@@ -56,21 +56,6 @@ export const getAllSubscriptions = async (req: Request, res: Response): Promise<
     // Sort
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
-
-    // Query subscriptions with restaurant details
-    let query = Subscription.find(filter)
-      .populate({
-        path: 'restaurantId',
-        select: 'name subdomain email phone isActive',
-      })
-      .populate({
-        path: 'planId',
-        select: 'name price features',
-      })
-      .sort(sort)
-      .skip(skip)
-      .limit(limitNum)
-      .lean();
 
     // If search is provided, we need to search in restaurant names
     if (search) {

@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import Restaurant from '../common/models/Restaurant';
-import Order from '../common/models/Order';
-import Customer from '../common/models/Customer';
-import mongoose from 'mongoose';
+import Restaurant from '../../common/models/Restaurant';
+import Order from '../../common/models/Order';
+import Customer from '../../common/models/Customer';
 
 // Subscription plan pricing (monthly)
 const SUBSCRIPTION_PRICING = {
@@ -226,7 +225,7 @@ export const getPlatformRevenue = async (req: Request, res: Response): Promise<v
  * @route   GET /api/superadmin/analytics/growth
  * @access  Private (Super Admin)
  */
-export const getRestaurantGrowth = async (req: Request, res: Response): Promise<void> => {
+export const getRestaurantGrowth = async (_req: Request, res: Response): Promise<void> => {
   try {
     // Calculate last 12 months date range
     const now = new Date();
@@ -327,7 +326,7 @@ export const getRestaurantGrowth = async (req: Request, res: Response): Promise<
  * @route   GET /api/superadmin/analytics/top-restaurants
  * @access  Private (Super Admin)
  */
-export const getTopRestaurants = async (req: Request, res: Response): Promise<void> => {
+export const getTopRestaurants = async (_req: Request, res: Response): Promise<void> => {
   try {
     // Get top restaurants by order revenue
     const topByRevenue = await Order.aggregate([
@@ -483,7 +482,7 @@ export const getTopRestaurants = async (req: Request, res: Response): Promise<vo
  * @route   GET /api/superadmin/analytics/stats
  * @access  Private (Super Admin)
  */
-export const getPlatformStats = async (req: Request, res: Response): Promise<void> => {
+export const getPlatformStats = async (_req: Request, res: Response): Promise<void> => {
   try {
     // Get restaurant statistics
     const [

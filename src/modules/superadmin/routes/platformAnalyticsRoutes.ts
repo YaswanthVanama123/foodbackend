@@ -5,7 +5,7 @@ import {
   getTopRestaurants,
   getPlatformStats,
 } from '../controllers/platformAnalyticsController';
-import { superAdminAuth } from '../common/middleware/authMiddleware';
+import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
 const router = Router();
 

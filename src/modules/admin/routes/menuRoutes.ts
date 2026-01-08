@@ -9,14 +9,14 @@ import {
   toggleAvailability,
   uploadImage,
 } from '../controllers/menuController';
-import { authMiddleware } from '../common/middleware/authMiddleware';
-import { uploadMenuImage } from '../common/middleware/uploadMiddleware';
-import { handleValidationErrors } from '../common/middleware/validationMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
+import { uploadMenuImage } from '../../common/middleware/uploadMiddleware';
+import { handleValidationErrors } from '../../common/middleware/validationMiddleware';
 import {
   createMenuItemValidator,
   updateMenuItemValidator,
   mongoIdValidator,
-} from '../common/utils/validators';
+} from '../../common/utils/validators';
 
 const router = express.Router();
 

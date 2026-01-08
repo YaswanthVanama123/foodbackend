@@ -4,8 +4,8 @@ import {
   getOrderDetails,
   reorder,
 } from '../controllers/customerOrderController';
-import { customerAuthMiddleware } from '../common/middleware/authMiddleware';
-import { handleValidationErrors } from '../common/middleware/validationMiddleware';
+import { customerAuthMiddleware } from '../../common/middleware/authMiddleware';
+import { handleValidationErrors } from '../../common/middleware/validationMiddleware';
 import { param, query, body } from 'express-validator';
 
 const customerOrderRouter = express.Router();

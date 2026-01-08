@@ -9,9 +9,9 @@ import {
 import {
   uploadSingleImage,
   uploadMultipleImages as uploadMultipleMiddleware,
-} from '../common/middleware/uploadMiddleware';
-import { authMiddleware } from '../common/middleware/authMiddleware';
-import { validateTenant } from '../common/middleware/tenantMiddleware';
+} from '../../common/middleware/uploadMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
+import { validateTenant } from '../../common/middleware/tenantMiddleware';
 
 const router = express.Router();
 

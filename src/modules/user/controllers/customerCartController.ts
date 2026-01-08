@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import CustomerCart from '../common/models/CustomerCart';
-import MenuItem from '../common/models/MenuItem';
+import CustomerCart from '../../common/models/CustomerCart';
+import MenuItem from '../../common/models/MenuItem';
 
 // @desc    Get customer's cart
 // @route   GET /api/customers/cart
@@ -40,7 +40,7 @@ export const getCart = async (req: Request, res: Response): Promise<void> => {
 
     // Calculate cart totals
     let subtotal = 0;
-    const validItems = cart.items.filter((item: any) => {
+    const validItems = cart!.items.filter((item: any) => {
       // Filter out items that are no longer available
       if (!item.menuItemId || !item.menuItemId.isAvailable) {
         return false;

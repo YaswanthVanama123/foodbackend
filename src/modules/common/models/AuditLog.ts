@@ -266,11 +266,12 @@ auditLogSchema.statics.getFilteredLogs = async function(
 // Ensure virtuals are included when converting to JSON
 auditLogSchema.set('toJSON', {
   virtuals: true,
-  transform: function(doc, ret) {
-    ret.id = ret._id;
-    delete ret._id;
-    delete ret.__v;
-    return ret;
+  transform: function(_doc, ret) {
+    const { _id, __v, ...auditLogWithoutMetadata } = ret;
+    return {
+      id: _id,
+      ...auditLogWithoutMetadata,
+    };
   },
 });
 

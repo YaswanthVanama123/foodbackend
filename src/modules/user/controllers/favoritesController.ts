@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import Customer from '../common/models/Customer';
-import MenuItem from '../common/models/MenuItem';
+import Customer from '../../common/models/Customer';
+import MenuItem from '../../common/models/MenuItem';
 import mongoose from 'mongoose';
 
 // @desc    Add menu item to favorites

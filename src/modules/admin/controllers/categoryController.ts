@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Category from '../common/models/Category';
+import Category from '../../common/models/Category';
 
 // @desc    Get all categories (tenant-scoped)
 // @route   GET /api/categories

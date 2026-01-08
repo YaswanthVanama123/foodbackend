@@ -6,7 +6,7 @@ import {
   getDietaryOptions,
   getPriceRange,
 } from '../controllers/searchController';
-import { authMiddleware } from '../common/middleware/authMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
 
 const router = express.Router();
 

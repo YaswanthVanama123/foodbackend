@@ -8,7 +8,7 @@ import {
   exportOrders,
   getBulkSummary,
 } from '../controllers/bulkController';
-import { authMiddleware } from '../common/middleware/authMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
 
 const router = express.Router();
 

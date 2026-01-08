@@ -156,7 +156,7 @@ const ticketSchema = new Schema<ITicket>({
 });
 
 // Indexes for performance
-ticketSchema.index({ ticketNumber: 1 });
+// Note: ticketNumber already has a unique index from field definition
 ticketSchema.index({ restaurantId: 1, status: 1 });
 ticketSchema.index({ assignedTo: 1, status: 1 });
 ticketSchema.index({ status: 1, priority: -1, createdAt: -1 });
@@ -165,7 +165,7 @@ ticketSchema.index({ createdAt: -1 });
 ticketSchema.index({ tags: 1 });
 
 // Counter schema for auto-generating ticket numbers
-interface ITicketCounter extends Document {
+interface ITicketCounter {
   _id: string;
   seq: number;
 }
@@ -320,7 +320,7 @@ ticketSchema.statics.getStatistics = async function() {
 // Ensure virtuals are included when converting to JSON
 ticketSchema.set('toJSON', {
   virtuals: true,
-  transform: function(doc, ret) {
+  transform: function(_doc, ret) {
     return ret;
   },
 });

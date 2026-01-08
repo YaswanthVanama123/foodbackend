@@ -4,13 +4,13 @@ import {
   bulkDeleteOrders,
   exportOrders,
 } from '../controllers/orderBulkController';
-import { authMiddleware } from '../common/middleware/authMiddleware';
-import { handleValidationErrors } from '../common/middleware/validationMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
+import { handleValidationErrors } from '../../common/middleware/validationMiddleware';
 import {
   bulkUpdateOrderStatusValidator,
   bulkDeleteOrdersValidator,
   exportOrdersValidator,
-} from '../common/utils/validators';
+} from '../../common/utils/validators';
 
 const orderBulkRouter = express.Router();
 

@@ -198,7 +198,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/upload', uploadRoutes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).json({
     success: true,
     message: 'Server is running',
@@ -213,7 +213,7 @@ app.get('/health', (req, res) => {
 });
 
 // API documentation endpoint
-app.get('/api', (req, res) => {
+app.get('/api', (_req, res) => {
   res.status(200).json({
     success: true,
     message: 'Patlinks Food Ordering API - Multi-Tenant SaaS Platform',
@@ -277,11 +277,11 @@ app.get('/api', (req, res) => {
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((_req, res) => {
   res.status(404).json({
     success: false,
     message: 'Route not found',
-    path: req.originalUrl,
+    path: _req.originalUrl,
   });
 });
 

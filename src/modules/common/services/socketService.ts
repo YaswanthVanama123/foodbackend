@@ -1,6 +1,6 @@
 import { Server, Socket, Namespace } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import { jwtConfig } from './config/jwt';
+import { jwtConfig } from '../config/jwt';
 
 interface SocketJwtPayload {
   id: string;

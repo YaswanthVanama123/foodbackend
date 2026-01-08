@@ -9,7 +9,7 @@ import {
   getSubscriptionById,
   deleteSubscription,
 } from '../controllers/subscriptionController';
-import { superAdminAuth } from '../common/middleware/authMiddleware';
+import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
 const router = Router();
 

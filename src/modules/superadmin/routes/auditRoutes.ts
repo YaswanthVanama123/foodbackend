@@ -8,7 +8,7 @@ import {
   getLogsByResource,
   cleanupOldLogs,
 } from '../controllers/auditController';
-import { superAdminAuth } from '../common/middleware/authMiddleware';
+import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
 const router = express.Router();
 

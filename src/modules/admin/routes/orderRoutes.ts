@@ -18,14 +18,14 @@ import {
   duplicateOrder,
   getOrderModifications,
 } from '../controllers/orderModificationController';
-import { authMiddleware, optionalCustomerAuth } from '../common/middleware/authMiddleware';
-import { handleValidationErrors } from '../common/middleware/validationMiddleware';
+import { authMiddleware, optionalCustomerAuth } from '../../common/middleware/authMiddleware';
+import { handleValidationErrors } from '../../common/middleware/validationMiddleware';
 import {
   createOrderValidator,
   updateOrderStatusValidator,
   mongoIdValidator,
   paginationValidator,
-} from '../common/utils/validators';
+} from '../../common/utils/validators';
 
 const ordersRouter = express.Router();
 

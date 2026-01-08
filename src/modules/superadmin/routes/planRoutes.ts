@@ -7,7 +7,7 @@ import {
   deletePlan,
   togglePlanStatus,
 } from '../controllers/planController';
-import { superAdminAuth } from '../common/middleware/authMiddleware';
+import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
 const router = Router();
 

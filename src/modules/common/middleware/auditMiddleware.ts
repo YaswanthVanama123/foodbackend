@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import auditService from './services/auditService';
+import auditService from '../services/auditService';
 
 /**
  * Audit Middleware - Automatically logs super admin actions

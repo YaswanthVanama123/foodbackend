@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import Order from '../common/models/Order';
-import { getSocketService } from '../common/services/socketService';
+import Order from '../../common/models/Order';
+import { getSocketService } from '../../common/services/socketService';
 
 // @desc    Get kitchen display orders (tenant-scoped)
 // @route   GET /api/kitchen/orders

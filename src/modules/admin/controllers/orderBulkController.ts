@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import Order, { OrderStatus } from '../common/models/Order';
-import Table from '../common/models/Table';
-import { getSocketService } from '../common/services/socketService';
+import Order, { OrderStatus } from '../../common/models/Order';
+import Table from '../../common/models/Table';
+import { getSocketService } from '../../common/services/socketService';
 import { Types } from 'mongoose';
 
 // Valid order statuses
@@ -82,7 +82,7 @@ export const bulkUpdateOrderStatus = async (req: Request, res: Response): Promis
       updatedBy: adminId ? new Types.ObjectId(adminId) : undefined,
     };
 
-    const updateResult = await Order.updateMany(
+    await Order.updateMany(
       {
         _id: { $in: orders.map(o => o._id) },
         restaurantId: req.restaurantId,

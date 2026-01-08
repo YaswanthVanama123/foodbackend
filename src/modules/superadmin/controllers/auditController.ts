@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import auditService from '../common/services/auditService';
+import auditService from '../../common/services/auditService';
 import { Types } from 'mongoose';
 
 /**

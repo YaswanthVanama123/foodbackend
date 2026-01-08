@@ -1,14 +1,14 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import SuperAdmin from '../common/models/SuperAdmin';
-import Restaurant from '../common/models/Restaurant';
-import Admin from '../common/models/Admin';
-import Order from '../common/models/Order';
-import MenuItem from '../common/models/MenuItem';
-import Table from '../common/models/Table';
-import Category from '../common/models/Category';
-import { jwtConfig } from '../common/config/jwt';
-import { getSocketService } from '../common/services/socketService';
+import SuperAdmin from '../../common/models/SuperAdmin';
+import Restaurant from '../../common/models/Restaurant';
+import Admin from '../../common/models/Admin';
+import Order from '../../common/models/Order';
+import MenuItem from '../../common/models/MenuItem';
+import Table from '../../common/models/Table';
+import Category from '../../common/models/Category';
+import { jwtConfig } from '../../common/config/jwt';
+import { getSocketService } from '../../common/services/socketService';
 
 // Generate JWT token for super admin
 const generateSuperAdminToken = (superAdminId: string): string => {
@@ -20,7 +20,7 @@ const generateSuperAdminToken = (superAdminId: string): string => {
     jwtConfig.secret,
     {
       expiresIn: jwtConfig.accessTokenExpire,
-    }
+    } as any
   );
 };
 
@@ -79,12 +79,12 @@ export const superAdminLogin = async (req: Request, res: Response): Promise<void
 
     // Remove password from response
     const superAdminData = superAdmin.toObject();
-    delete superAdminData.password;
+    const { password: _, ...superAdminWithoutPassword } = superAdminData;
 
     res.status(200).json({
       success: true,
       data: {
-        superAdmin: superAdminData,
+        superAdmin: superAdminWithoutPassword,
         token,
       },
     });
@@ -628,11 +628,11 @@ export const createRestaurantAdmin = async (req: Request, res: Response): Promis
 
     // Remove password from response
     const adminData = admin.toObject();
-    delete adminData.password;
+    const { password: _, ...adminWithoutPassword } = adminData;
 
     res.status(201).json({
       success: true,
-      data: adminData,
+      data: adminWithoutPassword,
       message: 'Admin created successfully',
     });
   } catch (error: any) {
@@ -695,7 +695,7 @@ export const getRestaurantAdmins = async (req: Request, res: Response): Promise<
 // @desc    Get global platform analytics
 // @route   GET /api/super-admin/analytics/global
 // @access  Private (Super Admin)
-export const getGlobalAnalytics = async (req: Request, res: Response): Promise<void> => {
+export const getGlobalAnalytics = async (_req: Request, res: Response): Promise<void> => {
   try {
     const [
       totalRestaurants,

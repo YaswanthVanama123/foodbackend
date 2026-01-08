@@ -1,6 +1,6 @@
 import express from 'express';
 import { getDashboardStatsController, getActiveOrdersController } from '../controllers/orderController';
-import { authMiddleware } from '../common/middleware/authMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
 
 const dashboardRouter = express.Router();
 

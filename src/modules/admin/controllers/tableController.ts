@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Table from '../common/models/Table';
+import Table from '../../common/models/Table';
 
 // @desc    Get all tables (tenant-scoped)
 // @route   GET /api/tables

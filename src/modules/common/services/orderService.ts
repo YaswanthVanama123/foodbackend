@@ -1,4 +1,4 @@
-import Order, { IOrder, IOrderItem } from '../models/Order';
+import Order, { IOrderItem } from '../models/Order';
 import Table from '../models/Table';
 
 const TAX_RATE = 0.08; // 8% tax rate (adjust as needed)

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import Customer from '../common/models/Customer';
-import { jwtConfig } from '../common/config/jwt';
+import Customer from '../../common/models/Customer';
+import { jwtConfig } from '../../common/config/jwt';
 
 // Generate JWT token for customer
 const generateToken = (customerId: string, restaurantId: string): string => {
@@ -14,7 +14,7 @@ const generateToken = (customerId: string, restaurantId: string): string => {
     jwtConfig.secret,
     {
       expiresIn: jwtConfig.accessTokenExpire,
-    }
+    } as any
   );
 };
 
@@ -29,7 +29,7 @@ const generateRefreshToken = (customerId: string, restaurantId: string): string 
     jwtConfig.refreshSecret,
     {
       expiresIn: jwtConfig.refreshTokenExpire,
-    }
+    } as any
   );
 };
 
@@ -99,12 +99,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     // Remove password from response
     const customerData = customer.toObject();
-    delete customerData.password;
+    const { password: _, ...customerWithoutPassword } = customerData;
 
     res.status(201).json({
       success: true,
       data: {
-        customer: customerData,
+        customer: customerWithoutPassword,
         restaurant: req.tenant,
         token,
         refreshToken,
@@ -185,12 +185,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     // Remove password from response
     const customerData = customer.toObject();
-    delete customerData.password;
+    const { password: _, ...customerWithoutPassword } = customerData;
 
     res.status(200).json({
       success: true,
       data: {
-        customer: customerData,
+        customer: customerWithoutPassword,
         restaurant: req.tenant,
         token,
         refreshToken,
@@ -390,7 +390,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 // @desc    Logout customer
 // @route   POST /api/customers/logout
 // @access  Private (Customer)
-export const logout = async (req: Request, res: Response): Promise<void> => {
+export const logout = async (_req: Request, res: Response): Promise<void> => {
   try {
     // Note: With JWT, logout is handled on the client side by removing the token
     // This endpoint is mainly for consistency and future enhancements (e.g., token blacklisting)

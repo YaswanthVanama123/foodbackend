@@ -8,13 +8,13 @@ import {
   toggleTable,
   getTableStatus,
 } from '../controllers/tableController';
-import { authMiddleware } from '../common/middleware/authMiddleware';
-import { handleValidationErrors } from '../common/middleware/validationMiddleware';
+import { authMiddleware } from '../../common/middleware/authMiddleware';
+import { handleValidationErrors } from '../../common/middleware/validationMiddleware';
 import {
   createTableValidator,
   updateTableValidator,
   mongoIdValidator,
-} from '../common/utils/validators';
+} from '../../common/utils/validators';
 
 const router = express.Router();
 

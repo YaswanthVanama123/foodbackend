@@ -324,9 +324,7 @@ const restaurantSchema = new Schema<IRestaurant>({
 });
 
 // Indexes for performance
-restaurantSchema.index({ subdomain: 1 });
-restaurantSchema.index({ slug: 1 });
-restaurantSchema.index({ email: 1 });
+// Note: subdomain, slug, and email already have unique indexes from field definitions
 restaurantSchema.index({ isActive: 1, 'subscription.status': 1 });
 restaurantSchema.index({ createdAt: -1 });
 

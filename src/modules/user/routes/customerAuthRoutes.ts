@@ -8,7 +8,7 @@ import {
   changePassword,
   refreshToken,
 } from '../controllers/customerAuthController';
-import { customerAuth } from '../common/middleware/customerAuth';
+import { customerAuth } from '../../common/middleware/customerAuth';
 
 const router = express.Router();
 

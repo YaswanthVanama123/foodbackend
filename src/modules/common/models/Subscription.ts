@@ -190,8 +190,8 @@ subscriptionSchema.methods.getLastPayment = function(): IPaymentRecord | null {
 // Instance method to calculate total revenue
 subscriptionSchema.methods.getTotalRevenue = function(): number {
   return this.paymentHistory
-    .filter(payment => payment.status === 'completed')
-    .reduce((total, payment) => total + payment.amount, 0);
+    .filter((payment: IPaymentRecord) => payment.status === 'completed')
+    .reduce((total: number, payment: IPaymentRecord) => total + payment.amount, 0);
 };
 
 // Static method to find active subscriptions

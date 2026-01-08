@@ -1,9 +1,9 @@
 import { Request } from 'express';
 import { Types } from 'mongoose';
-import { IAdmin } from '../models/Admin';
-import { ISuperAdmin } from '../models/SuperAdmin';
-import { IRestaurant } from '../models/Restaurant';
-import { ICustomer } from '../models/Customer';
+import { IAdmin } from '../modules/common/models/Admin';
+import { ISuperAdmin } from '../modules/common/models/SuperAdmin';
+import { IRestaurant } from '../modules/common/models/Restaurant';
+import { ICustomer } from '../modules/common/models/Customer';
 
 declare global {
   namespace Express {

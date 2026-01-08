@@ -1,5 +1,6 @@
+/// <reference path="../../../types/express.d.ts" />
 import { Request, Response, NextFunction } from 'express';
-import Restaurant, { IRestaurant } from './models/Restaurant';
+import Restaurant, { IRestaurant } from '../models/Restaurant';
 
 /**
  * Extract subdomain from host header and parse it

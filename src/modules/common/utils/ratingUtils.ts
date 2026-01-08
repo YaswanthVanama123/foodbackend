@@ -1,7 +1,6 @@
 import { Types } from 'mongoose';
 import Review from '../models/Review';
 import MenuItem from '../models/MenuItem';
-import Restaurant from '../models/Restaurant';
 
 /**
  * Calculate average rating for a specific menu item from all its reviews

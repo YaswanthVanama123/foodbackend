@@ -3,22 +3,7 @@
  * Restaurant administration functionality
  */
 
-// Controllers
-export * from './controllers/authController';
-export * from './controllers/menuController';
-export * from './controllers/categoryController';
-export * from './controllers/tableController';
-export * from './controllers/orderController';
-export * from './controllers/orderModificationController';
-export * from './controllers/kitchenController';
-export * from './controllers/analyticsController';
-export * from './controllers/bulkController';
-export * from './controllers/searchController';
-export * from './controllers/dashboardController';
-export * from './controllers/uploadController';
-export * from './controllers/orderBulkController';
-
-// Routes
+// Routes (only routes are exported from modules - controllers are used internally)
 export { default as authRoutes } from './routes/authRoutes';
 export { default as menuRoutes } from './routes/menuRoutes';
 export { default as categoryRoutes } from './routes/categoryRoutes';

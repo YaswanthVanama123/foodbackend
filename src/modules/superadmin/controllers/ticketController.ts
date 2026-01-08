@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import Ticket from '../common/models/Ticket';
-import Restaurant from '../common/models/Restaurant';
-import SuperAdmin from '../common/models/SuperAdmin';
+import Ticket from '../../common/models/Ticket';
+import Restaurant from '../../common/models/Restaurant';
+import SuperAdmin from '../../common/models/SuperAdmin';
 import { Types } from 'mongoose';
 
 /**

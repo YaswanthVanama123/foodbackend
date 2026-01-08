@@ -115,7 +115,7 @@ const planSchema = new Schema<IPlan>({
 });
 
 // Indexes for performance
-planSchema.index({ name: 1 });
+// Note: name already has a unique index from field definition
 planSchema.index({ isActive: 1 });
 planSchema.index({ displayOrder: 1 });
 planSchema.index({ price: 1 });

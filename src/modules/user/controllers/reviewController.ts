@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import Review from '../common/models/Review';
-import Order from '../common/models/Order';
-import MenuItem from '../common/models/MenuItem';
+import Review from '../../common/models/Review';
+import Order from '../../common/models/Order';
+import MenuItem from '../../common/models/MenuItem';
 import mongoose from 'mongoose';
-import { updateMenuItemRating } from '../common/utils/ratingUtils';
+import { updateMenuItemRating } from '../../common/utils/ratingUtils';
 
 // @desc    Create review
 // @route   POST /api/reviews
@@ -465,7 +465,7 @@ export const getMenuItemRatings = async (req: Request, res: Response): Promise<v
     const stats = await Review.aggregate([
       {
         $match: {
-          restaurantId: new mongoose.Types.ObjectId(req.restaurantId as string),
+          restaurantId: new mongoose.Types.ObjectId(req.restaurantId!.toString()),
           menuItemId: new mongoose.Types.ObjectId(menuItemId),
           isVisible: true,
         },
@@ -533,7 +533,7 @@ export const getRestaurantRatings = async (req: Request, res: Response): Promise
     const stats = await Review.aggregate([
       {
         $match: {
-          restaurantId: new mongoose.Types.ObjectId(req.restaurantId as string),
+          restaurantId: new mongoose.Types.ObjectId(req.restaurantId!.toString()),
           isVisible: true,
         },
       },
