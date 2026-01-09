@@ -68,7 +68,7 @@ export class SocketService {
   }
 
   /**
-   * Authenticate socket connection with JWT
+   * Authenticate socket connection with JWT (Optional)
    */
   private authenticateSocket(
     socket: Socket,
@@ -77,8 +77,13 @@ export class SocketService {
   ) {
     const token = socket.handshake.auth.token || socket.handshake.query.token;
 
+    // Allow connections without token (guest users)
     if (!token) {
-      return next(new Error('Authentication token required'));
+      console.log(`Guest socket connection to restaurant ${restaurantId}`);
+      socket.data.userId = null;
+      socket.data.restaurantId = restaurantId;
+      socket.data.userType = 'guest';
+      return next();
     }
 
     try {
@@ -101,7 +106,12 @@ export class SocketService {
 
       next();
     } catch (error) {
-      next(new Error('Invalid token'));
+      // If token is invalid, allow as guest instead of rejecting
+      console.log(`Invalid token, allowing as guest for restaurant ${restaurantId}`);
+      socket.data.userId = null;
+      socket.data.restaurantId = restaurantId;
+      socket.data.userType = 'guest';
+      next();
     }
   }
 

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import MenuItem from '../../common/models/MenuItem';
+import Review from '../../common/models/Review';
 import path from 'path';
 import fs from 'fs';
 
@@ -27,10 +28,47 @@ export const getMenuItems = async (req: Request, res: Response): Promise<void> =
       .populate('categoryId', 'name')
       .sort({ name: 1 });
 
+    // Aggregate ratings for each menu item
+    const menuItemsWithRatings = await Promise.all(
+      menuItems.map(async (item) => {
+        const ratings = await Review.aggregate([
+          {
+            $match: {
+              restaurantId: req.restaurantId,
+              menuItemId: item._id,
+              isVisible: true,
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              averageRating: { $avg: '$rating' },
+              totalReviews: { $sum: 1 },
+            },
+          },
+        ]);
+
+        const itemObj = item.toObject();
+        if (ratings.length > 0) {
+          return {
+            ...itemObj,
+            averageRating: Math.round(ratings[0].averageRating * 10) / 10, // Round to 1 decimal
+            totalReviews: ratings[0].totalReviews,
+          };
+        }
+
+        return {
+          ...itemObj,
+          averageRating: 0,
+          totalReviews: 0,
+        };
+      })
+    );
+
     res.status(200).json({
       success: true,
-      count: menuItems.length,
-      data: menuItems,
+      count: menuItemsWithRatings.length,
+      data: menuItemsWithRatings,
     });
   } catch (error: any) {
     res.status(500).json({

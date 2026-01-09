@@ -41,7 +41,7 @@ import {
   customerCartRoutes,
   customerOrderRoutes,
   reviewRoutes,
-  // favoritesRoutes, // Disabled - not needed for simple username auth
+  favoritesRoutes,
 } from './modules/user';
 
 // Import routes from superadmin module
@@ -212,7 +212,7 @@ app.use('/api/restaurants', restaurantRoutes);
 // Customer Routes (from modules/user - All tenant-scoped)
 app.use('/api/customers/auth', customerAuthRoutes);
 app.use('/api/customers/cart', customerCartRoutes);
-// app.use('/api/customers/favorites', favoritesRoutes); // Disabled - not needed for simple username auth
+app.use('/api/customers/favorites', favoritesRoutes);
 app.use('/api/customers/orders', customerOrderRoutes);
 app.use('/api/reviews', reviewRoutes);
 
