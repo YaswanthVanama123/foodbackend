@@ -25,12 +25,14 @@ export interface IMenuItem extends Document {
   description?: string;
   categoryId: Types.ObjectId;
   price: number;
+  originalPrice?: number;
   images?: IMenuItemImages;
   image?: string; // Virtual field for backward compatibility
   isAvailable: boolean;
   isVegetarian: boolean;
   isVegan: boolean;
   isGlutenFree: boolean;
+  isNonVeg: boolean;
   customizationOptions?: ICustomization[];
   preparationTime?: number;
   averageRating: number;
@@ -105,6 +107,11 @@ const menuItemSchema = new Schema<IMenuItem>(
       required: [true, 'Price is required'],
       min: [0, 'Price must be positive'],
     },
+    originalPrice: {
+      type: Number,
+      required: false,
+      min: [0, 'Original price must be positive'],
+    },
     images: {
       type: {
         original: {
@@ -139,6 +146,10 @@ const menuItemSchema = new Schema<IMenuItem>(
       default: false,
     },
     isGlutenFree: {
+      type: Boolean,
+      default: false,
+    },
+    isNonVeg: {
       type: Boolean,
       default: false,
     },

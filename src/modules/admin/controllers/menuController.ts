@@ -228,9 +228,11 @@ export const createMenuItem = async (req: Request, res: Response): Promise<void>
       description,
       categoryId,
       price,
+      originalPrice,
       isVegetarian,
       isVegan,
       isGlutenFree,
+      isNonVeg,
       customizationOptions,
       preparationTime,
     } = req.body;
@@ -250,9 +252,11 @@ export const createMenuItem = async (req: Request, res: Response): Promise<void>
       description,
       categoryId,
       price,
+      originalPrice,
       isVegetarian: isVegetarian || false,
       isVegan: isVegan || false,
       isGlutenFree: isGlutenFree || false,
+      isNonVeg: isNonVeg || false,
       customizationOptions: customizationOptions || [],
       preparationTime,
     });
@@ -280,10 +284,12 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
       description,
       categoryId,
       price,
+      originalPrice,
       isAvailable,
       isVegetarian,
       isVegan,
       isGlutenFree,
+      isNonVeg,
       customizationOptions,
       preparationTime,
     } = req.body;
@@ -306,10 +312,12 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
     menuItem.description = description !== undefined ? description : menuItem.description;
     menuItem.categoryId = categoryId || menuItem.categoryId;
     menuItem.price = price !== undefined ? price : menuItem.price;
+    menuItem.originalPrice = originalPrice !== undefined ? originalPrice : menuItem.originalPrice;
     menuItem.isAvailable = isAvailable !== undefined ? isAvailable : menuItem.isAvailable;
     menuItem.isVegetarian = isVegetarian !== undefined ? isVegetarian : menuItem.isVegetarian;
     menuItem.isVegan = isVegan !== undefined ? isVegan : menuItem.isVegan;
     menuItem.isGlutenFree = isGlutenFree !== undefined ? isGlutenFree : menuItem.isGlutenFree;
+    menuItem.isNonVeg = isNonVeg !== undefined ? isNonVeg : menuItem.isNonVeg;
     menuItem.customizationOptions = customizationOptions || menuItem.customizationOptions;
     menuItem.preparationTime = preparationTime !== undefined ? preparationTime : menuItem.preparationTime;
 
