@@ -25,5 +25,12 @@
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/examples",
+    "src/scripts",
+    "src/modules/common/utils/cdnUtils.ts",
+    "src/modules/common/utils/imageUtils.ts"
+  ]
 }

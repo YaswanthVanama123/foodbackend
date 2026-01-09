@@ -16,3 +16,4 @@ export { default as searchRoutes } from './routes/searchRoutes';
 export { default as dashboardRoutes } from './routes/dashboardRoutes';
 export { default as uploadRoutes } from './routes/uploadRoutes';
 export { default as orderBulkRoutes } from './routes/orderBulkRoutes';
+export { default as restaurantRoutes } from './routes/restaurantRoutes';

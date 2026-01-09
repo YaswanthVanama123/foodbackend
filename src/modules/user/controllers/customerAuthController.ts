@@ -1,5 +1,23 @@
 import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import Customer from '../../common/models/Customer';
+import Order from '../../common/models/Order';
+import { jwtConfig } from '../../common/config/jwt';
+
+/**
+ * Generate JWT token for customer
+ */
+const generateCustomerToken = (customerId: string, restaurantId: string): string => {
+  return jwt.sign(
+    {
+      id: customerId,
+      restaurantId,
+      type: 'customer',
+    },
+    jwtConfig.secret,
+    { expiresIn: jwtConfig.accessTokenExpire } as any
+  );
+};
 
 /**
  * @desc    Simple Customer Registration (username only, tenant-scoped)
@@ -56,6 +74,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       restaurantId: req.restaurantId,
     });
 
+    // Generate JWT token
+    const token = generateCustomerToken(customer._id.toString(), customer.restaurantId.toString());
+
     res.status(201).json({
       success: true,
       message: 'Registration successful',
@@ -66,6 +87,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
           restaurantId: customer.restaurantId,
           createdAt: customer.createdAt,
         },
+        token,
       },
     });
   } catch (error: any) {
@@ -119,6 +141,18 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Check if customer is active
+    if (!customer.isActive) {
+      res.status(403).json({
+        success: false,
+        message: 'Account is inactive. Please contact support.',
+      });
+      return;
+    }
+
+    // Generate JWT token
+    const token = generateCustomerToken(customer._id.toString(), customer.restaurantId.toString());
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -129,6 +163,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           restaurantId: customer.restaurantId,
           createdAt: customer.createdAt,
         },
+        token,
       },
     });
   } catch (error: any) {
@@ -136,6 +171,56 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({
       success: false,
       message: 'Server error during login',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get customer's active order (tenant-scoped)
+ * @route   GET /api/customers/auth/active-order
+ * @access  Private (requires customerAuth)
+ */
+export const getActiveOrder = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Customer is attached by customerAuth middleware
+    if (!req.customer) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    // Find customer's most recent non-cancelled, non-served order
+    const activeOrder = await Order.findOne({
+      restaurantId: req.restaurantId,
+      customerId: req.customer._id,
+      status: { $in: ['received', 'preparing', 'ready'] },
+    })
+      .populate('tableId', 'tableNumber location')
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    if (!activeOrder) {
+      res.status(200).json({
+        success: true,
+        data: null,
+        message: 'No active order found',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: activeOrder,
+    });
+  } catch (error: any) {
+    console.error('Get active order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
       error: error.message,
     });
   }

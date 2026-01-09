@@ -5,10 +5,12 @@ import {
   deleteImage,
   getImage,
   listImages,
+  uploadLogo,
 } from '../controllers/uploadController';
 import {
   uploadSingleImage,
   uploadMultipleImages as uploadMultipleMiddleware,
+  uploadLogo as uploadLogoMiddleware,
 } from '../../common/middleware/uploadMiddleware';
 import { authMiddleware } from '../../common/middleware/authMiddleware';
 import { validateTenant } from '../../common/middleware/tenantMiddleware';
@@ -84,6 +86,39 @@ router.use(validateTenant);
  * }
  */
 router.post('/image', uploadSingleImage, uploadImage);
+
+/**
+ * @route   POST /api/upload/logo
+ * @desc    Upload restaurant logo (tenant-scoped)
+ * @access  Private (Admin)
+ * @body    multipart/form-data with 'logo' field
+ * @returns { success, message, data: { logoUrl, filename, path, size } }
+ *
+ * Purpose:
+ * - Upload logo and automatically update restaurant's branding.logo field
+ *
+ * @example
+ * POST /api/upload/logo
+ * Content-Type: multipart/form-data
+ * Authorization: Bearer {token}
+ *
+ * FormData:
+ *   logo: [File]
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "message": "Logo uploaded successfully",
+ *   "data": {
+ *     "logoUrl": "http://localhost:5000/api/upload/507f1f77bcf86cd799439011/1704123456789-abc123def456.jpg",
+ *     "filename": "1704123456789-abc123def456.jpg",
+ *     "path": "507f1f77bcf86cd799439011/1704123456789-abc123def456.jpg",
+ *     "size": 245678,
+ *     "mimetype": "image/jpeg"
+ *   }
+ * }
+ */
+router.post('/logo', uploadLogoMiddleware, uploadLogo);
 
 /**
  * @route   POST /api/upload/images

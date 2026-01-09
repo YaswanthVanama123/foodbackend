@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import { deleteFile, fileExists, getFileSize } from '../../common/middleware/uploadMiddleware';
+import Restaurant from '../../common/models/Restaurant';
 
 // Base upload directory
 const BASE_UPLOAD_DIR = process.env.UPLOAD_DIR || './uploads';
@@ -246,8 +247,11 @@ export const getImage = async (req: Request, res: Response): Promise<void> => {
   try {
     const { restaurantId, filename } = req.params;
 
+    console.log('[getImage] Request params:', { restaurantId, filename });
+
     // Validate parameters
     if (!restaurantId || !filename) {
+      console.log('[getImage] Missing parameters:', { restaurantId, filename });
       res.status(400).json({
         success: false,
         message: 'Missing restaurantId or filename',
@@ -258,6 +262,7 @@ export const getImage = async (req: Request, res: Response): Promise<void> => {
 
     // Validate filename (prevent directory traversal)
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      console.log('[getImage] Invalid filename detected:', filename);
       res.status(400).json({
         success: false,
         message: 'Invalid filename',
@@ -267,9 +272,11 @@ export const getImage = async (req: Request, res: Response): Promise<void> => {
     }
 
     const filePath = path.join(BASE_UPLOAD_DIR, restaurantId, filename);
+    console.log('[getImage] Looking for file at:', filePath);
 
     // Check if file exists
     if (!fileExists(filePath)) {
+      console.log('[getImage] File not found at:', filePath);
       res.status(404).json({
         success: false,
         message: 'Image not found',
@@ -277,6 +284,8 @@ export const getImage = async (req: Request, res: Response): Promise<void> => {
       });
       return;
     }
+
+    console.log('[getImage] File found, serving:', filePath);
 
     // Set caching headers for better performance
     res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
@@ -395,6 +404,101 @@ export const listImages = async (req: Request, res: Response): Promise<void> => 
     res.status(500).json({
       success: false,
       message: 'Failed to list images',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Upload restaurant logo and update database
+ * @route   POST /api/upload/logo
+ * @access  Private (requires authentication)
+ *
+ * Purpose:
+ * - Upload logo for the restaurant
+ * - Automatically update the restaurant's branding.logo field
+ *
+ * Request: multipart/form-data with 'logo' field
+ * Response: { success, message, data: { logoUrl } }
+ */
+export const uploadLogo = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Check if file was uploaded
+    if (!req.file) {
+      res.status(400).json({
+        success: false,
+        message: 'No logo file provided. Please upload a logo image.',
+        code: 'NO_FILE_UPLOADED',
+      });
+      return;
+    }
+
+    // Validate tenant context
+    if (!req.restaurantId) {
+      // Clean up uploaded file if tenant validation fails
+      await deleteFile(req.file.path);
+
+      res.status(400).json({
+        success: false,
+        message: 'Restaurant context not found',
+        code: 'TENANT_CONTEXT_MISSING',
+      });
+      return;
+    }
+
+    const restaurantId = req.restaurantId.toString();
+    const filename = req.file.filename;
+    const relativePath = `${restaurantId}/${filename}`;
+
+    // Generate URL for accessing the logo
+    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+    const logoUrl = `${baseUrl}/api/upload/${relativePath}`;
+
+    // Update restaurant's branding.logo.original in database
+    const restaurant = await Restaurant.findByIdAndUpdate(
+      restaurantId,
+      {
+        $set: {
+          'branding.logo.original': logoUrl,
+        },
+      },
+      { new: true }
+    );
+
+    if (!restaurant) {
+      // Clean up uploaded file if restaurant not found
+      await deleteFile(req.file.path);
+
+      res.status(404).json({
+        success: false,
+        message: 'Restaurant not found',
+      });
+      return;
+    }
+
+    console.log(`✓ Logo uploaded and saved for restaurant ${restaurantId}: ${logoUrl}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Logo uploaded successfully',
+      data: {
+        logoUrl,
+        filename,
+        path: relativePath,
+        size: getFileSize(req.file.path),
+        mimetype: req.file.mimetype,
+      },
+    });
+  } catch (error: any) {
+    // Clean up file on error
+    if (req.file) {
+      await deleteFile(req.file.path).catch(() => {});
+    }
+
+    console.error('Upload logo error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload logo',
       error: error.message,
     });
   }

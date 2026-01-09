@@ -32,6 +32,7 @@ import {
   bulkRoutes,
   kitchenRoutes,
   uploadRoutes,
+  restaurantRoutes,
 } from './modules/admin';
 
 // Import routes from user module
@@ -40,7 +41,7 @@ import {
   customerCartRoutes,
   customerOrderRoutes,
   reviewRoutes,
-  favoritesRoutes,
+  // favoritesRoutes, // Disabled - not needed for simple username auth
 } from './modules/user';
 
 // Import routes from superadmin module
@@ -102,14 +103,20 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/customers/login', authLimiter);
 app.use('/api/customers/register', authLimiter);
 
-// Manual CORS headers - No CORS package, direct header control
+// CORS Headers - Allow ALL origins, methods, and headers (No restrictions)
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', '*');
-  res.header('Access-Control-Allow-Headers', '*');
-  res.header('Access-Control-Expose-Headers', '*');
+  // Allow any origin
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  // Allow any HTTP method
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+  // Allow any headers
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-restaurant-id, x-subdomain');
+  // Allow credentials (cookies, authorization headers)
+  res.header('Access-Control-Allow-Credentials', 'true');
+  // Cache preflight requests for 24 hours
+  res.header('Access-Control-Max-Age', '86400');
 
-  // Handle preflight requests
+  // Handle preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
     return;
@@ -200,11 +207,12 @@ app.use('/api/search', searchRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/kitchen', kitchenRoutes);
+app.use('/api/restaurants', restaurantRoutes);
 
 // Customer Routes (from modules/user - All tenant-scoped)
 app.use('/api/customers/auth', customerAuthRoutes);
 app.use('/api/customers/cart', customerCartRoutes);
-app.use('/api/customers/favorites', favoritesRoutes);
+// app.use('/api/customers/favorites', favoritesRoutes); // Disabled - not needed for simple username auth
 app.use('/api/customers/orders', customerOrderRoutes);
 app.use('/api/reviews', reviewRoutes);
 

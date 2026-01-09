@@ -93,6 +93,21 @@ export const uploadSingleImage = multer({
 }).single('image');
 
 /**
+ * Multer upload configuration for logo upload
+ * - File size limit: 5MB
+ * - Tenant-scoped storage
+ * - Image validation
+ */
+export const uploadLogo = multer({
+  storage: tenantStorage,
+  fileFilter: imageFileFilter,
+  limits: {
+    fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880'), // 5MB default
+    files: 1,
+  },
+}).single('logo');
+
+/**
  * Multer upload configuration for multiple images
  * - File size limit: 5MB per file
  * - Maximum 10 files at once

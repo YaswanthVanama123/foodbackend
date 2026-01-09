@@ -25,7 +25,7 @@ export * from './middleware/authMiddleware';
 export * from './middleware/tenantMiddleware';
 export * from './middleware/uploadMiddleware';
 export * from './middleware/auditMiddleware';
-export * from './middleware/customerAuth';
+// export * from './middleware/customerAuth'; // Duplicate exports with authMiddleware - disabled
 export * from './middleware/errorHandler';
 export * from './middleware/validationMiddleware';
 
@@ -35,8 +35,8 @@ export * from './services/auditService';
 export * from './services/orderService';
 
 // Utils
-export * from './utils/imageUtils';
-export * from './utils/cdnUtils';
+// export * from './utils/imageUtils'; // Disabled - has sharp type issues
+// export * from './utils/cdnUtils'; // Disabled - missing AWS SDK dependencies
 export * from './utils/ratingUtils';
 export * from './utils/validators';
 

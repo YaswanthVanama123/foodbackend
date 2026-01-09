@@ -46,11 +46,13 @@ export const getOrders = async (req: Request, res: Response): Promise<void> => {
 
     res.status(200).json({
       success: true,
-      count: orders.length,
-      total,
-      page: Number(page),
-      pages: Math.ceil(total / Number(limit)),
       data: orders,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit)),
+      },
     });
   } catch (error: any) {
     console.error('Get orders error:', error);
@@ -419,11 +421,13 @@ export const getOrderHistory = async (req: Request, res: Response): Promise<void
 
     res.status(200).json({
       success: true,
-      count: orders.length,
-      total,
-      page: Number(page),
-      pages: Math.ceil(total / Number(limit)),
       data: orders,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit)),
+      },
     });
   } catch (error: any) {
     console.error('Get order history error:', error);

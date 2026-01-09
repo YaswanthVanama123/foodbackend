@@ -192,28 +192,41 @@ orderSchema.index({ restaurantId: 1, status: 1 });
 orderSchema.index({ restaurantId: 1, createdAt: -1 });
 orderSchema.index({ restaurantId: 1, customerId: 1, createdAt: -1 });
 
-// Auto-generate order number before saving (RESTAURANT-SCOPED)
-orderSchema.pre('save', async function (next) {
-  if (!this.isNew) {
+// Auto-generate order number before validation (RESTAURANT-SCOPED)
+// NOTE: Using pre('validate') instead of pre('save') to run before required field validation
+orderSchema.pre('validate', async function (next) {
+  // Only generate for new orders that don't already have an orderNumber
+  if (!this.isNew || this.orderNumber) {
     return next();
   }
 
   try {
-    const date = new Date();
-    const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+    console.log('[Order Hook] Generating orderNumber for new order');
+
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+
+    // Create date boundaries for counting today's orders
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
 
     // CRITICAL: Count orders for THIS restaurant only
     const count = await mongoose.model('Order').countDocuments({
       restaurantId: this.restaurantId,
       createdAt: {
-        $gte: new Date(date.setHours(0, 0, 0, 0)),
-        $lt: new Date(date.setHours(23, 59, 59, 999)),
+        $gte: startOfDay,
+        $lt: endOfDay,
       },
     });
 
     this.orderNumber = `ORD-${dateStr}-${String(count + 1).padStart(3, '0')}`;
+    console.log('[Order Hook] Generated orderNumber:', this.orderNumber);
     next();
   } catch (error: any) {
+    console.error('[Order Hook] Error generating orderNumber:', error);
     next(error);
   }
 });

@@ -66,6 +66,11 @@ export const extractTenant = async (
       return next();
     }
 
+    // Skip tenant extraction for public image serving (GET requests to /upload/:restaurantId/:filename)
+    if (req.method === 'GET' && req.path.match(/^\/upload\/[a-f0-9]{24}\/[^/]+$/)) {
+      return next();
+    }
+
     // Skip for health check and root API endpoint
     if (req.path === '/health' || req.path === '/' || req.path === '') {
       return next();
