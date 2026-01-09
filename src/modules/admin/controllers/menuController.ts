@@ -1,8 +1,91 @@
 import { Request, Response } from 'express';
 import MenuItem from '../../common/models/MenuItem';
 import Review from '../../common/models/Review';
+import Category from '../../common/models/Category';
 import path from 'path';
 import fs from 'fs';
+
+// @desc    Get menu page data (categories + menu items with ratings) - OPTIMIZED
+// @route   GET /api/menu/page-data
+// @access  Public
+export const getMenuPageData = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { available } = req.query;
+
+    // Parallel fetch: Categories and Menu Items
+    const [categories, menuItems] = await Promise.all([
+      // Fetch active categories
+      Category.find({
+        restaurantId: req.restaurantId,
+        isActive: true,
+      }).sort({ displayOrder: 1, name: 1 }).lean(),
+
+      // Fetch menu items with category population
+      MenuItem.find({
+        restaurantId: req.restaurantId,
+        ...(available === 'true' && { isAvailable: true }),
+      })
+        .populate('categoryId', 'name')
+        .sort({ name: 1 })
+        .lean(),
+    ]);
+
+    // Single aggregation query to get ALL ratings at once (eliminates N+1 problem)
+    const allRatings = await Review.aggregate([
+      {
+        $match: {
+          restaurantId: req.restaurantId,
+          isVisible: true,
+        },
+      },
+      {
+        $group: {
+          _id: '$menuItemId',
+          averageRating: { $avg: '$rating' },
+          totalReviews: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Create a ratings map for O(1) lookup
+    const ratingsMap = new Map();
+    allRatings.forEach((rating: any) => {
+      ratingsMap.set(rating._id.toString(), {
+        averageRating: Math.round(rating.averageRating * 10) / 10,
+        totalReviews: rating.totalReviews,
+      });
+    });
+
+    // Attach ratings to menu items
+    const menuItemsWithRatings = menuItems.map((item: any) => {
+      const ratings = ratingsMap.get(item._id.toString());
+      return {
+        ...item,
+        averageRating: ratings?.averageRating || 0,
+        totalReviews: ratings?.totalReviews || 0,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        categories,
+        menuItems: menuItemsWithRatings,
+      },
+      count: {
+        categories: categories.length,
+        menuItems: menuItemsWithRatings.length,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching menu page data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
 
 // @desc    Get all menu items (tenant-scoped)
 // @route   GET /api/menu

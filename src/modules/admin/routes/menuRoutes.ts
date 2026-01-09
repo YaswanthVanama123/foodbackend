@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  getMenuPageData,
   getMenuItems,
   getMenuItemsByCategory,
   getMenuItemById,
@@ -21,6 +22,7 @@ import {
 const router = express.Router();
 
 // Public routes - more specific routes first
+router.get('/page-data', getMenuPageData); // OPTIMIZED: Returns categories + menu items + ratings in 1 call
 router.get('/category/:categoryId', mongoIdValidator, handleValidationErrors, getMenuItemsByCategory);
 router.get('/:id', mongoIdValidator, handleValidationErrors, getMenuItemById);
 router.get('/', getMenuItems);
