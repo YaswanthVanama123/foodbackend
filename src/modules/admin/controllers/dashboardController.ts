@@ -42,6 +42,7 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
       activeOrdersResult,
       statusBreakdownResult,
       revenueResult,
+      preparationTimeResult,
     ] = await Promise.all([
       // Total orders today
       Order.countDocuments({
@@ -88,6 +89,67 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
           },
         },
       ]),
+
+      // Average preparation time (time from received to ready status)
+      Order.aggregate([
+        {
+          $match: {
+            restaurantId: new mongoose.Types.ObjectId(restaurantId.toString()),
+            createdAt: { $gte: today, $lt: tomorrow },
+            status: { $in: ['ready', 'served'] },
+          },
+        },
+        {
+          $addFields: {
+            preparationTime: {
+              $cond: {
+                if: {
+                  $and: [
+                    { $isArray: '$statusHistory' },
+                    { $gt: [{ $size: '$statusHistory' }, 0] },
+                  ],
+                },
+                then: {
+                  $subtract: [
+                    {
+                      $let: {
+                        vars: {
+                          readyStatus: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: '$statusHistory',
+                                  as: 'history',
+                                  cond: { $eq: ['$$history.status', 'ready'] },
+                                },
+                              },
+                              0,
+                            ],
+                          },
+                        },
+                        in: { $ifNull: ['$$readyStatus.timestamp', '$createdAt'] },
+                      },
+                    },
+                    '$createdAt',
+                  ],
+                },
+                else: null,
+              },
+            },
+          },
+        },
+        {
+          $match: {
+            preparationTime: { $ne: null },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            avgPrepTime: { $avg: '$preparationTime' },
+          },
+        },
+      ]),
     ]);
 
     // Process status breakdown into individual counters
@@ -110,20 +172,28 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     const servedOrdersCount = revenueResult.length > 0 ? revenueResult[0].orderCount : 0;
     const averageOrderValue = servedOrdersCount > 0 ? totalRevenue / servedOrdersCount : 0;
 
-    // Prepare response data
+    // Calculate average preparation time in minutes
+    const avgPrepTimeMs = preparationTimeResult.length > 0 ? preparationTimeResult[0].avgPrepTime : 0;
+    const averagePreparationTime = Math.round(avgPrepTimeMs / 60000); // Convert ms to minutes
+
+    // Prepare response data (using frontend-expected field names)
     const stats = {
-      // Overall metrics
-      totalOrders: totalOrdersResult,
+      // Overall metrics - matching frontend DashboardStats interface
+      todayOrders: totalOrdersResult,
+      todayRevenue: parseFloat(totalRevenue.toFixed(2)),
       activeOrders: activeOrdersResult,
-      totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+      averagePreparationTime: averagePreparationTime,
+
+      // Additional metrics
       averageOrderValue: parseFloat(averageOrderValue.toFixed(2)),
 
       // Status breakdown
-      pendingOrders: statusBreakdown.received,
-      preparingOrders: statusBreakdown.preparing,
-      readyOrders: statusBreakdown.ready,
-      servedOrders: statusBreakdown.served,
-      cancelledOrders: statusBreakdown.cancelled,
+      ordersByStatus: {
+        received: statusBreakdown.received,
+        preparing: statusBreakdown.preparing,
+        ready: statusBreakdown.ready,
+        served: statusBreakdown.served,
+      },
     };
 
     res.status(200).json({

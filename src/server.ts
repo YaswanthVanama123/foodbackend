@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import path from 'path';
 
@@ -72,38 +71,11 @@ initSocketService(io);
 // Connect to MongoDB
 connectDB();
 
-// Trust proxy (for rate limiting behind reverse proxy)
+// Trust proxy (for CORS and security)
 app.set('trust proxy', 1);
 
-// Security Middleware
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: false, // Disable for development, configure properly in production
-}));
-
-// Rate Limiting
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
-  message: 'Too many login attempts, please try again later.',
-  skipSuccessfulRequests: true,
-});
-
-// Apply rate limiting
-app.use('/api/', apiLimiter);
-app.use('/api/auth/login', authLimiter);
-app.use('/api/customers/login', authLimiter);
-app.use('/api/customers/register', authLimiter);
-
-// CORS Headers - Allow ALL origins, methods, and headers (No restrictions)
+// CORS Headers - Apply FIRST before any other middleware
+// This ensures CORS headers are sent for all responses
 app.use((req, res, next) => {
   // Allow any origin
   res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
@@ -124,6 +96,12 @@ app.use((req, res, next) => {
 
   next();
 });
+
+// Security Middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false, // Disable for development, configure properly in production
+}));
 
 // Compression Middleware (gzip)
 app.use(compression({
@@ -358,9 +336,9 @@ server.listen(PORT, () => {
 ║   • MongoDB query optimization ✓                          ║
 ║   • Gzip compression ✓                                    ║
 ║   • Static file caching ✓                                 ║
-║   • Rate limiting ✓                                       ║
 ║   • NoSQL injection protection ✓                          ║
 ║   • Tenant data isolation ✓                               ║
+║   • CORS enabled for all origins ✓                        ║
 ║                                                           ║
 ║   📋 Total Endpoints: 130+                                ║
 ║   📁 Total Files: 74+ modular files                       ║
