@@ -9,9 +9,9 @@ import SuperAdmin from '../../common/models/SuperAdmin';
 export const registerFCMToken = async (req: Request, res: Response): Promise<void> => {
   try {
     const { token } = req.body;
-    const superAdminId = (req as any).superAdminId;
+    const superAdmin = (req as any).superAdmin;
 
-    if (!superAdminId) {
+    if (!superAdmin || !superAdmin._id) {
       res.status(401).json({
         success: false,
         message: 'Unauthorized',
@@ -28,13 +28,13 @@ export const registerFCMToken = async (req: Request, res: Response): Promise<voi
     }
 
     // Add token to array if not already present (using $addToSet)
-    const superAdmin = await SuperAdmin.findByIdAndUpdate(
-      superAdminId,
+    const updatedSuperAdmin = await SuperAdmin.findByIdAndUpdate(
+      superAdmin._id,
       { $addToSet: { fcmTokens: token } }, // Add to set prevents duplicates
       { new: true, select: 'username fcmTokens' }
     );
 
-    if (!superAdmin) {
+    if (!updatedSuperAdmin) {
       res.status(404).json({
         success: false,
         message: 'Super admin not found',
@@ -42,14 +42,14 @@ export const registerFCMToken = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    console.log(`✅ FCM token registered for super admin ${superAdmin.username} (${superAdmin.fcmTokens?.length || 0} total devices)`);
+    console.log(`✅ FCM token registered for super admin ${updatedSuperAdmin.username} (${updatedSuperAdmin.fcmTokens?.length || 0} total devices)`);
 
     res.status(200).json({
       success: true,
       message: 'FCM token registered successfully',
       data: {
         tokenSet: true,
-        totalDevices: superAdmin.fcmTokens?.length || 0,
+        totalDevices: updatedSuperAdmin.fcmTokens?.length || 0,
       },
     });
   } catch (error: any) {
@@ -69,9 +69,9 @@ export const registerFCMToken = async (req: Request, res: Response): Promise<voi
 export const removeFCMToken = async (req: Request, res: Response): Promise<void> => {
   try {
     const { token } = req.body;
-    const superAdminId = (req as any).superAdminId;
+    const superAdmin = (req as any).superAdmin;
 
-    if (!superAdminId) {
+    if (!superAdmin || !superAdmin._id) {
       res.status(401).json({
         success: false,
         message: 'Unauthorized',
@@ -88,13 +88,13 @@ export const removeFCMToken = async (req: Request, res: Response): Promise<void>
     }
 
     // Remove specific token from array (using $pull)
-    const superAdmin = await SuperAdmin.findByIdAndUpdate(
-      superAdminId,
+    const updatedSuperAdmin = await SuperAdmin.findByIdAndUpdate(
+      superAdmin._id,
       { $pull: { fcmTokens: token } }, // Remove specific token
       { new: true, select: 'username fcmTokens' }
     );
 
-    if (!superAdmin) {
+    if (!updatedSuperAdmin) {
       res.status(404).json({
         success: false,
         message: 'Super admin not found',
@@ -102,14 +102,14 @@ export const removeFCMToken = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    console.log(`✅ FCM token removed for super admin ${superAdmin.username} (${superAdmin.fcmTokens?.length || 0} remaining devices)`);
+    console.log(`✅ FCM token removed for super admin ${updatedSuperAdmin.username} (${updatedSuperAdmin.fcmTokens?.length || 0} remaining devices)`);
 
     res.status(200).json({
       success: true,
       message: 'FCM token removed successfully',
       data: {
-        tokenSet: (superAdmin.fcmTokens?.length || 0) > 0,
-        totalDevices: superAdmin.fcmTokens?.length || 0,
+        tokenSet: (updatedSuperAdmin.fcmTokens?.length || 0) > 0,
+        totalDevices: updatedSuperAdmin.fcmTokens?.length || 0,
       },
     });
   } catch (error: any) {
@@ -128,9 +128,9 @@ export const removeFCMToken = async (req: Request, res: Response): Promise<void>
  */
 export const getFCMToken = async (req: Request, res: Response): Promise<void> => {
   try {
-    const superAdminId = (req as any).superAdminId;
+    const superAdmin = (req as any).superAdmin;
 
-    if (!superAdminId) {
+    if (!superAdmin || !superAdmin._id) {
       res.status(401).json({
         success: false,
         message: 'Unauthorized',
@@ -138,9 +138,9 @@ export const getFCMToken = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const superAdmin = await SuperAdmin.findById(superAdminId).select('fcmTokens');
+    const fullSuperAdmin = await SuperAdmin.findById(superAdmin._id).select('fcmTokens');
 
-    if (!superAdmin) {
+    if (!fullSuperAdmin) {
       res.status(404).json({
         success: false,
         message: 'Super admin not found',
@@ -151,9 +151,9 @@ export const getFCMToken = async (req: Request, res: Response): Promise<void> =>
     res.status(200).json({
       success: true,
       data: {
-        tokens: superAdmin.fcmTokens || [],
-        hasToken: (superAdmin.fcmTokens?.length || 0) > 0,
-        totalDevices: superAdmin.fcmTokens?.length || 0,
+        tokens: fullSuperAdmin.fcmTokens || [],
+        hasToken: (fullSuperAdmin.fcmTokens?.length || 0) > 0,
+        totalDevices: fullSuperAdmin.fcmTokens?.length || 0,
       },
     });
   } catch (error: any) {
