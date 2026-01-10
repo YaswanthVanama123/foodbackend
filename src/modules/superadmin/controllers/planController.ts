@@ -1,9 +1,36 @@
 import { Request, Response } from 'express';
 import Plan from '../../common/models/Plan';
 import cacheService, { CacheKeys } from '../../common/services/cacheService';
+import { seedPlansViaAPI } from '../../../scripts/seedPlansViaAPI';
 
 // Cache TTL constants (in milliseconds)
 const PLAN_CACHE_TTL = 3600000; // 1 hour - plans rarely change
+
+// @desc    Seed default plans (Dev/Admin only)
+// @route   POST /api/superadmin/plans/seed
+// @access  Private (Super Admin)
+export const seedPlans = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    console.log('🌱 Seeding plans via API...');
+    const result = await seedPlansViaAPI();
+
+    // Invalidate all plan caches
+    cacheService.deletePattern(CacheKeys.planPattern());
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result.plans,
+    });
+  } catch (error: any) {
+    console.error('Seed plans error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to seed plans',
+      error: error.message,
+    });
+  }
+};
 
 // @desc    Get all plans (active and inactive)
 // @route   GET /api/superadmin/plans

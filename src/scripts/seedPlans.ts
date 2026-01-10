@@ -4,7 +4,7 @@ import Plan from '../modules/common/models/Plan';
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://foodadmin:Yaswanth123@cluster0.0wuz8fl.mongodb.net/?appName=Cluster0';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/patlinks';
 
 /**
  * Seed Subscription Plans
@@ -43,6 +43,29 @@ async function seedPlans() {
 
     // Define subscription plans
     const plans = [
+      {
+        name: 'Free',
+        description: 'Perfect for trying out the platform. Get started with basic features at no cost for limited operations.',
+        price: 0,
+        currency: 'USD',
+        billingCycle: 'monthly',
+        features: [
+          'Up to 5 tables',
+          'Up to 20 menu items',
+          '1 admin user',
+          'Basic order management',
+          'Email notifications',
+          'Standard support (72h response)',
+        ],
+        limits: {
+          maxTables: 5,
+          maxMenuItems: 20,
+          maxAdmins: 1,
+          maxOrders: 100,
+        },
+        isActive: true,
+        displayOrder: 0,
+      },
       {
         name: 'Basic',
         description: 'Perfect for small restaurants just getting started with digital ordering. Includes essential features to manage your restaurant efficiently.',

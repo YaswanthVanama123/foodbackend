@@ -6,6 +6,7 @@ import {
   updatePlan,
   deletePlan,
   togglePlanStatus,
+  seedPlans,
 } from '../controllers/planController';
 import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
@@ -15,6 +16,9 @@ const router = Router();
  * Plan Management Routes
  * All routes require super admin authentication
  */
+
+// Seed default plans (Dev/Testing)
+router.post('/seed', superAdminAuth, seedPlans);
 
 // Get all plans (with pagination, search, filters)
 router.get('/', superAdminAuth, getAllPlans);
