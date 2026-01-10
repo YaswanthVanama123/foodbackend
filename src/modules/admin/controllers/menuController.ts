@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import MenuItem from '../../common/models/MenuItem';
 import Review from '../../common/models/Review';
-import Category from '../../common/models/Category';
 import mongoose from 'mongoose';
 import path from 'path';
 import fs from 'fs';
@@ -56,17 +55,18 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
 
     const dbStart = Date.now();
 
-    // Single aggregation using $facet to get categories, menu items, and add-ons
-    const result = await Category.aggregate([
-      { $match: { restaurantId: req.restaurantId } },
-      { $limit: 1 }, // Just need one to start the facet
+    // FIXED: Single aggregation using $facet to get categories, menu items, and add-ons
+    // Use Restaurant collection to ensure aggregation runs even with no categories
+    const result = await mongoose.connection.collection('restaurants').aggregate([
+      { $match: { _id: req.restaurantId } },
+      { $limit: 1 },
       {
         $facet: {
           categories: [
             {
               $lookup: {
                 from: 'categories',
-                let: { restaurantId: '$restaurantId' },
+                let: { restaurantId: '$_id' },
                 pipeline: [
                   {
                     $match: {
@@ -94,7 +94,7 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
             {
               $lookup: {
                 from: 'menuitems',
-                let: { restaurantId: '$restaurantId' },
+                let: { restaurantId: '$_id' },
                 pipeline: [
                   {
                     $match: {
@@ -143,7 +143,7 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
             {
               $lookup: {
                 from: 'addons',
-                let: { restaurantId: '$restaurantId' },
+                let: { restaurantId: '$_id' },
                 pipeline: [
                   {
                     $match: {
@@ -176,7 +176,7 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
           addOns: { $arrayElemAt: ['$addOns.result', 0] },
         },
       },
-    ]).exec();
+    ]).toArray();
 
     dbQueryTime = Date.now() - dbStart;
 
@@ -271,17 +271,18 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
 
       const dbStart = Date.now();
 
-      // Use Category collection as base (simpler than Restaurant)
-      const aggregationResult = await Category.aggregate([
-        { $match: { restaurantId: req.restaurantId, isActive: true } },
-        { $limit: 1 }, // Just need one to start the facet
+      // FIXED: Use a dummy document approach with $facet to ensure pipeline always runs
+      // This prevents empty results when there are no active categories
+      const aggregationResult = await mongoose.connection.collection('restaurants').aggregate([
+        { $match: { _id: req.restaurantId } },
+        { $limit: 1 },
         {
           $facet: {
             categories: [
               {
                 $lookup: {
                   from: 'categories',
-                  let: { restaurantId: '$restaurantId' },
+                  let: { restaurantId: '$_id' },
                   pipeline: [
                     {
                       $match: {
@@ -298,6 +299,7 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
                         _id: 1,
                         name: 1,
                         displayOrder: 1,
+                        isActive: 1,
                       },
                     },
                     { $sort: { displayOrder: 1, name: 1 } },
@@ -311,7 +313,7 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
               {
                 $lookup: {
                   from: 'menuitems',
-                  let: { restaurantId: '$restaurantId' },
+                  let: { restaurantId: '$_id' },
                   pipeline: [
                     {
                       $match: {
@@ -384,7 +386,7 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
                 {
                   $lookup: {
                     from: 'favorites',
-                    let: { restaurantId: '$restaurantId' },
+                    let: { restaurantId: '$_id' },
                     pipeline: [
                       {
                         $match: {
@@ -417,7 +419,7 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
             ...(customerId ? { favorites: { $arrayElemAt: ['$favorites.result', 0] } } : {}),
           },
         },
-      ]).exec();
+      ]).toArray();
 
       dbQueryTime = Date.now() - dbStart;
       console.log(`[MENU API] DB aggregation completed in ${dbQueryTime}ms`);

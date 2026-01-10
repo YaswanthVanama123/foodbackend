@@ -78,22 +78,51 @@ export const composeMiddleware = (...middlewares: Function[]) => {
 
 /**
  * CORS whitelist configuration
- * Only allows specified origins for better security
+ * Supports both specific origins and subdomain patterns
  */
 export const getCorsOptions = () => {
   const whitelist = process.env.CORS_WHITELIST?.split(',') || [
     'http://localhost:3000',
     'http://localhost:5173',
+    'http://localhost:5174', // User app
+    'http://localhost:5175', // Admin app
   ];
 
   return {
     origin: (origin: string | undefined, callback: Function) => {
       // Allow requests with no origin (mobile apps, Postman, etc.)
-      if (!origin || whitelist.indexOf(origin) !== -1) {
+      if (!origin) {
         callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
+        return;
       }
+
+      // Check exact whitelist match
+      if (whitelist.indexOf(origin) !== -1) {
+        callback(null, true);
+        return;
+      }
+
+      // Support subdomain patterns: *.localhost:port and *.yourdomain.com
+      try {
+        const url = new URL(origin);
+
+        // Allow all *.localhost subdomains (for local development)
+        if (url.hostname.endsWith('.localhost') || url.hostname === 'localhost') {
+          callback(null, true);
+          return;
+        }
+
+        // Allow production domain subdomains (replace 'yourdomain.com' with your actual domain)
+        if (url.hostname.endsWith('.yourdomain.com')) {
+          callback(null, true);
+          return;
+        }
+      } catch (e) {
+        // Invalid URL
+      }
+
+      // Not allowed
+      callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     optionsSuccessStatus: 200,

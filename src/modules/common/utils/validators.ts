@@ -112,6 +112,28 @@ export const createOrderValidator: ValidationChain[] = [
   body('items.*.quantity').isInt({ min: 1, max: 99 }),
   body('items.*.subtotal').isFloat({ min: 0 }),
   body('notes').optional().trim().isLength({ max: 500 }),
+  // Guest info fields (optional - only required if not authenticated)
+  body('guestInfo').optional().isObject().withMessage('Guest info must be an object'),
+  body('guestInfo.name')
+    .if(body('guestInfo').exists())
+    .trim()
+    .notEmpty()
+    .withMessage('Guest name is required')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Guest name must be between 2 and 100 characters'),
+  body('guestInfo.phone')
+    .if(body('guestInfo').exists())
+    .trim()
+    .notEmpty()
+    .withMessage('Guest phone is required')
+    .matches(/^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/)
+    .withMessage('Invalid phone number format'),
+  body('guestInfo.email')
+    .optional()
+    .trim()
+    .isEmail()
+    .withMessage('Invalid email format')
+    .normalizeEmail(),
 ];
 
 export const updateOrderStatusValidator: ValidationChain[] = [

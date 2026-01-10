@@ -152,6 +152,13 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
   lastModified: true,
 }));
 
+// Serve print service installers
+app.use('/downloads', express.static(path.join(__dirname, '../public/downloads'), {
+  maxAge: '7d', // Cache for 7 days (installers don't change often)
+  etag: true,
+  lastModified: true,
+}));
+
 /**
  * ============================================
  * MULTI-TENANT ROUTING ARCHITECTURE
