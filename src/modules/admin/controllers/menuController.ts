@@ -56,7 +56,7 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
 
     const dbStart = Date.now();
 
-    // Single aggregation using $facet to get both categories and menu items
+    // Single aggregation using $facet to get categories, menu items, and add-ons
     const result = await Category.aggregate([
       { $match: { restaurantId: req.restaurantId } },
       { $limit: 1 }, // Just need one to start the facet
@@ -123,6 +123,8 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
                       isGlutenFree: 1,
                       isNonVeg: 1,
                       preparationTime: 1,
+                      customizationOptions: 1,
+                      addOnIds: 1,
                       categoryId: {
                         _id: { $arrayElemAt: ['$category._id', 0] },
                         name: { $arrayElemAt: ['$category.name', 0] },
@@ -137,12 +139,41 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
             },
             { $project: { result: 1, _id: 0 } },
           ],
+          addOns: [
+            {
+              $lookup: {
+                from: 'addons',
+                let: { restaurantId: '$restaurantId' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: { $eq: ['$restaurantId', '$$restaurantId'] },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 1,
+                      name: 1,
+                      description: 1,
+                      price: 1,
+                      isAvailable: 1,
+                      displayOrder: 1,
+                    },
+                  },
+                  { $sort: { displayOrder: 1, name: 1 } },
+                ],
+                as: 'result',
+              },
+            },
+            { $project: { result: 1, _id: 0 } },
+          ],
         },
       },
       {
         $project: {
           categories: { $arrayElemAt: ['$categories.result', 0] },
           menuItems: { $arrayElemAt: ['$menuItems.result', 0] },
+          addOns: { $arrayElemAt: ['$addOns.result', 0] },
         },
       },
     ]).exec();
@@ -151,6 +182,7 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
 
     const categories = result[0]?.categories || [];
     const menuItems = result[0]?.menuItems || [];
+    const addOns = result[0]?.addOns || [];
 
     // Optimize images with CDN
     const menuItemsOptimized = transformMenuItemsWithCDN(menuItems);
@@ -160,10 +192,12 @@ export const getAdminMenuPageData = async (req: Request, res: Response): Promise
       data: {
         categories,
         menuItems: menuItemsOptimized,
+        addOns,
       },
       count: {
         categories: categories.length,
         menuItems: menuItemsOptimized.length,
+        addOns: addOns.length,
       },
     };
 
@@ -298,9 +332,18 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
                       },
                     },
                     {
+                      $lookup: {
+                        from: 'addons',
+                        localField: 'addOnIds',
+                        foreignField: '_id',
+                        as: 'addOns',
+                      },
+                    },
+                    {
                       $project: {
                         _id: 1,
                         name: 1,
+                        description: 1,
                         price: 1,
                         originalPrice: 1,
                         images: 1,
@@ -310,6 +353,7 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
                         isGlutenFree: 1,
                         isNonVeg: 1,
                         preparationTime: 1,
+                        customizationOptions: 1,
                         categoryId: {
                           _id: { $arrayElemAt: ['$category._id', 0] },
                           name: { $arrayElemAt: ['$category.name', 0] },
@@ -317,6 +361,14 @@ export const getMenuPageData = async (req: Request, res: Response): Promise<void
                         // Use pre-computed ratings from MenuItem model (updated by background job or on review save)
                         averageRating: { $ifNull: ['$averageRating', 0] },
                         ratingsCount: { $ifNull: ['$ratingsCount', 0] },
+                        // Include populated add-ons (only available ones)
+                        addOns: {
+                          $filter: {
+                            input: '$addOns',
+                            as: 'addon',
+                            cond: { $eq: ['$$addon.isAvailable', true] },
+                          },
+                        },
                       },
                     },
                     { $sort: { name: 1 } },
@@ -875,6 +927,7 @@ export const createMenuItem = async (req: Request, res: Response): Promise<void>
       isGlutenFree,
       isNonVeg,
       customizationOptions,
+      addOnIds,
       preparationTime,
     } = req.body;
 
@@ -896,6 +949,16 @@ export const createMenuItem = async (req: Request, res: Response): Promise<void>
       }
     }
 
+    // Parse addOnIds if it's a JSON string (from FormData)
+    let parsedAddOnIds = addOnIds;
+    if (typeof addOnIds === 'string') {
+      try {
+        parsedAddOnIds = JSON.parse(addOnIds);
+      } catch (e) {
+        parsedAddOnIds = [];
+      }
+    }
+
     // Create menu item
     const menuItem = await MenuItem.create({
       restaurantId: req.restaurantId,
@@ -909,6 +972,7 @@ export const createMenuItem = async (req: Request, res: Response): Promise<void>
       isGlutenFree: isGlutenFree === 'true' || isGlutenFree === true,
       isNonVeg: isNonVeg === 'true' || isNonVeg === true,
       customizationOptions: parsedCustomizations || [],
+      addOnIds: parsedAddOnIds || [],
       preparationTime: preparationTime ? Number(preparationTime) : undefined,
       // Set image if uploaded
       ...(req.file && { image: `/uploads/menu-items/${req.file.filename}` }),
@@ -949,6 +1013,7 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
       isGlutenFree,
       isNonVeg,
       customizationOptions,
+      addOnIds,
       preparationTime,
     } = req.body;
 
@@ -973,6 +1038,16 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
         parsedCustomizations = JSON.parse(customizationOptions);
       } catch (e) {
         parsedCustomizations = undefined;
+      }
+    }
+
+    // Parse addOnIds if it's a JSON string (from FormData)
+    let parsedAddOnIds = addOnIds;
+    if (typeof addOnIds === 'string') {
+      try {
+        parsedAddOnIds = JSON.parse(addOnIds);
+      } catch (e) {
+        parsedAddOnIds = undefined;
       }
     }
 
@@ -1008,6 +1083,7 @@ export const updateMenuItem = async (req: Request, res: Response): Promise<void>
       ...(isGlutenFree !== undefined && { isGlutenFree: isGlutenFree === 'true' || isGlutenFree === true }),
       ...(isNonVeg !== undefined && { isNonVeg: isNonVeg === 'true' || isNonVeg === true }),
       ...(parsedCustomizations && { customizationOptions: parsedCustomizations }),
+      ...(parsedAddOnIds !== undefined && { addOnIds: parsedAddOnIds }),
       ...(preparationTime !== undefined && { preparationTime: preparationTime ? Number(preparationTime) : undefined }),
     };
 

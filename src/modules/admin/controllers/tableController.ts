@@ -281,14 +281,15 @@ export const updateTable = async (req: Request, res: Response): Promise<void> =>
           const admins = await Admin.find({
             restaurantId: req.restaurantId,
             isActive: true,
-            fcmToken: { $exists: true, $ne: null },
+            fcmTokens: { $exists: true, $ne: [] }, // Check for non-empty array
           })
-            .select('fcmToken')
+            .select('fcmTokens')
             .lean()
             .exec();
 
           if (admins.length > 0) {
-            const adminTokens = admins.map((admin) => admin.fcmToken!).filter(Boolean);
+            // Flatten all tokens from all admins
+            const adminTokens = admins.flatMap((admin) => admin.fcmTokens || []).filter(Boolean);
 
             if (adminTokens.length > 0) {
               // OPTIMIZATION: Use .lean() for restaurant query

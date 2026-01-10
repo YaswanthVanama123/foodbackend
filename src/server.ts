@@ -22,6 +22,7 @@ dotenv.config();
 import {
   authRoutes,
   categoryRoutes,
+  addOnRoutes,
   menuRoutes,
   tableRoutes,
   orderRoutes,
@@ -185,6 +186,7 @@ app.use('/api/', extractTenant);
 // Admin Routes (from modules/admin)
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/addons', addOnRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/orders', orderRoutes);

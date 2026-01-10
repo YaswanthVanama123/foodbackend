@@ -3,7 +3,7 @@ import Admin from '../../common/models/Admin';
 
 /**
  * Register FCM token for push notifications
- * Replaces any existing token (one device per admin)
+ * Adds token to array (supports multiple devices/browsers per admin)
  * POST /api/admin/fcm-token
  */
 export const registerFCMToken = async (req: Request, res: Response): Promise<void> => {
@@ -27,8 +27,12 @@ export const registerFCMToken = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Find admin and set/replace token
-    const admin = await Admin.findById(adminId);
+    // Add token to array if not already present (using $addToSet)
+    const admin = await Admin.findByIdAndUpdate(
+      adminId,
+      { $addToSet: { fcmTokens: token } }, // Add to set prevents duplicates
+      { new: true, select: 'username fcmTokens' }
+    );
 
     if (!admin) {
       res.status(404).json({
@@ -38,19 +42,14 @@ export const registerFCMToken = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const previousToken = admin.fcmToken;
-
-    // Replace token (overwrites any previous token)
-    admin.fcmToken = token;
-    await admin.save();
-
-    console.log(`✅ FCM token ${previousToken ? 'updated' : 'registered'} for admin ${admin.username}`);
+    console.log(`✅ FCM token registered for admin ${admin.username} (${admin.fcmTokens?.length || 0} total devices)`);
 
     res.status(200).json({
       success: true,
-      message: `FCM token ${previousToken ? 'updated' : 'registered'} successfully`,
+      message: 'FCM token registered successfully',
       data: {
         tokenSet: true,
+        totalDevices: admin.fcmTokens?.length || 0,
       },
     });
   } catch (error: any) {
@@ -69,6 +68,7 @@ export const registerFCMToken = async (req: Request, res: Response): Promise<voi
  */
 export const removeFCMToken = async (req: Request, res: Response): Promise<void> => {
   try {
+    const { token } = req.body;
     const adminId = req.admin?._id;
 
     if (!adminId) {
@@ -79,8 +79,20 @@ export const removeFCMToken = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Find admin and clear token
-    const admin = await Admin.findById(adminId);
+    if (!token || typeof token !== 'string') {
+      res.status(400).json({
+        success: false,
+        message: 'FCM token is required',
+      });
+      return;
+    }
+
+    // Remove specific token from array (using $pull)
+    const admin = await Admin.findByIdAndUpdate(
+      adminId,
+      { $pull: { fcmTokens: token } }, // Remove specific token
+      { new: true, select: 'username fcmTokens' }
+    );
 
     if (!admin) {
       res.status(404).json({
@@ -90,17 +102,14 @@ export const removeFCMToken = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Clear token
-    admin.fcmToken = undefined;
-    await admin.save();
-
-    console.log(`✅ FCM token removed for admin ${admin.username}`);
+    console.log(`✅ FCM token removed for admin ${admin.username} (${admin.fcmTokens?.length || 0} remaining devices)`);
 
     res.status(200).json({
       success: true,
       message: 'FCM token removed successfully',
       data: {
-        tokenSet: false,
+        tokenSet: (admin.fcmTokens?.length || 0) > 0,
+        totalDevices: admin.fcmTokens?.length || 0,
       },
     });
   } catch (error: any) {
@@ -114,7 +123,7 @@ export const removeFCMToken = async (req: Request, res: Response): Promise<void>
 };
 
 /**
- * Get FCM token for current admin (for debugging)
+ * Get FCM tokens for current admin (for debugging)
  * GET /api/admin/fcm-token
  */
 export const getFCMToken = async (req: Request, res: Response): Promise<void> => {
@@ -129,7 +138,7 @@ export const getFCMToken = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const admin = await Admin.findById(adminId).select('fcmToken');
+    const admin = await Admin.findById(adminId).select('fcmTokens');
 
     if (!admin) {
       res.status(404).json({
@@ -142,8 +151,9 @@ export const getFCMToken = async (req: Request, res: Response): Promise<void> =>
     res.status(200).json({
       success: true,
       data: {
-        token: admin.fcmToken,
-        hasToken: !!admin.fcmToken,
+        tokens: admin.fcmTokens || [],
+        hasToken: (admin.fcmTokens?.length || 0) > 0,
+        totalDevices: admin.fcmTokens?.length || 0,
       },
     });
   } catch (error: any) {

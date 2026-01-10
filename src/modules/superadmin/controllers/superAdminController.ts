@@ -515,8 +515,8 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
 
     // Send notification to all super admins about new restaurant
     try {
-      const superAdmins = await SuperAdmin.find({ isActive: true, fcmToken: { $exists: true, $ne: null } }).select('fcmToken');
-      const superAdminTokens = superAdmins.map(sa => sa.fcmToken).filter(token => token) as string[];
+      const superAdmins = await SuperAdmin.find({ isActive: true, fcmTokens: { $exists: true, $ne: [] } }).select('fcmTokens');
+      const superAdminTokens = superAdmins.flatMap(sa => sa.fcmTokens || []).filter(token => token) as string[];
 
       if (superAdminTokens.length > 0) {
         await notificationService.notifyNewRestaurant(
@@ -890,8 +890,8 @@ export const createRestaurantAdmin = async (req: Request, res: Response): Promis
 
     // Send notification to all super admins about new admin user
     try {
-      const superAdmins = await SuperAdmin.find({ isActive: true, fcmToken: { $exists: true, $ne: null } }).select('fcmToken');
-      const superAdminTokens = superAdmins.map(sa => sa.fcmToken).filter(token => token) as string[];
+      const superAdmins = await SuperAdmin.find({ isActive: true, fcmTokens: { $exists: true, $ne: [] } }).select('fcmTokens');
+      const superAdminTokens = superAdmins.flatMap(sa => sa.fcmTokens || []).filter(token => token) as string[];
 
       if (superAdminTokens.length > 0) {
         await notificationService.notifyNewAdmin(

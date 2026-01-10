@@ -391,9 +391,9 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
               {
                 restaurantId: req.restaurantId,
                 isActive: true,
-                fcmToken: { $exists: true, $ne: null },
+                fcmTokens: { $exists: true, $ne: [] }, // Check for non-empty array
               },
-              { fcmToken: 1 }
+              { fcmTokens: 1 }
             )
               .lean()
               .exec(),
@@ -403,7 +403,8 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
           ]);
 
           if (admins.length > 0) {
-            const adminTokens = admins.map((admin) => admin.fcmToken!).filter(Boolean);
+            // Flatten all tokens from all admins
+            const adminTokens = admins.flatMap((admin) => admin.fcmTokens || []).filter(Boolean);
 
             if (adminTokens.length > 0 && restaurant) {
               await firebaseService.sendActiveNotification(
@@ -538,9 +539,9 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
           {
             restaurantId: req.restaurantId,
             isActive: true,
-            fcmToken: { $exists: true, $ne: null },
+            fcmTokens: { $exists: true, $ne: [] }, // Check for non-empty array
           },
-          { fcmToken: 1 }
+          { fcmTokens: 1 }
         )
           .lean()
           .exec(),
@@ -550,7 +551,8 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
       ]);
 
       if (admins.length > 0 && restaurant) {
-        const adminTokens = admins.map((admin) => admin.fcmToken!).filter(Boolean);
+        // Flatten all tokens from all admins
+        const adminTokens = admins.flatMap((admin) => admin.fcmTokens || []).filter(Boolean);
 
         if (adminTokens.length > 0) {
           // Map status to user-friendly message

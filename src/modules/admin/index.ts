@@ -7,6 +7,7 @@
 export { default as authRoutes } from './routes/authRoutes';
 export { default as menuRoutes } from './routes/menuRoutes';
 export { default as categoryRoutes } from './routes/categoryRoutes';
+export { default as addOnRoutes } from './routes/addOnRoutes';
 export { default as tableRoutes } from './routes/tableRoutes';
 export { default as orderRoutes } from './routes/orderRoutes';
 export { default as kitchenRoutes } from './routes/kitchenRoutes';

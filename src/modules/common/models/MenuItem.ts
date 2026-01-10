@@ -34,6 +34,7 @@ export interface IMenuItem extends Document {
   isGlutenFree: boolean;
   isNonVeg: boolean;
   customizationOptions?: ICustomization[];
+  addOnIds?: Types.ObjectId[]; // Reference to AddOn collection
   preparationTime?: number;
   averageRating: number;
   ratingsCount: number;
@@ -155,6 +156,11 @@ const menuItemSchema = new Schema<IMenuItem>(
     },
     customizationOptions: {
       type: [customizationSchema],
+    },
+    addOnIds: {
+      type: [Schema.Types.ObjectId],
+      ref: 'AddOn',
+      default: [],
     },
     preparationTime: {
       type: Number,

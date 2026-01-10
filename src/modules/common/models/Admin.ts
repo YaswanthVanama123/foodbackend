@@ -9,7 +9,7 @@ export interface IAdmin extends Document {
   role: 'admin' | 'manager' | 'staff';
   permissions: string[];
   isActive: boolean;
-  fcmToken?: string; // Firebase Cloud Messaging device token (one per admin)
+  fcmTokens?: string[]; // Firebase Cloud Messaging device tokens (multiple devices/browsers)
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -57,8 +57,9 @@ const adminSchema = new Schema<IAdmin>(
       type: Boolean,
       default: true,
     },
-    fcmToken: {
-      type: String,
+    fcmTokens: {
+      type: [String],
+      default: [],
       required: false,
       index: true, // Index for efficient FCM token lookups
     },
@@ -86,7 +87,7 @@ adminSchema.index({ restaurantId: 1, role: 1 });
 adminSchema.index({ restaurantId: 1 });
 adminSchema.index({ email: 1 });
 adminSchema.index({ username: 1 });
-adminSchema.index({ fcmToken: 1 });
+adminSchema.index({ fcmTokens: 1 }); // For efficient FCM token array lookups
 adminSchema.index({ isActive: 1 }); // For filtering active admins across restaurants
 adminSchema.index({ role: 1 });
 adminSchema.index({ createdAt: -1 }); // For sorting by creation date

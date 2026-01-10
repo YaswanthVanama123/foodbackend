@@ -6,12 +6,18 @@ export interface IOrderCustomization {
   priceModifier: number;
 }
 
+export interface IOrderAddOn {
+  name: string;
+  price: number;
+}
+
 export interface IOrderItem {
   menuItemId: Types.ObjectId;
   name: string;
   price: number;
   quantity: number;
   customizations?: IOrderCustomization[];
+  addOns?: IOrderAddOn[];
   subtotal: number;
   specialInstructions?: string;
 }
@@ -60,6 +66,20 @@ const orderCustomizationSchema = new Schema<IOrderCustomization>(
   { _id: false }
 );
 
+const orderAddOnSchema = new Schema<IOrderAddOn>(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    price: {
+      type: Number,
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
 const orderItemSchema = new Schema<IOrderItem>(
   {
     menuItemId: {
@@ -82,6 +102,10 @@ const orderItemSchema = new Schema<IOrderItem>(
     },
     customizations: {
       type: [orderCustomizationSchema],
+    },
+    addOns: {
+      type: [orderAddOnSchema],
+      default: [],
     },
     subtotal: {
       type: Number,
