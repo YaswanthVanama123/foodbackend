@@ -18,6 +18,11 @@ import firebaseService from './services/firebase.service';
 // Load environment variables
 dotenv.config();
 
+// Ensure NODE_ENV defaults to development when not provided
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'development';
+}
+
 // Import routes from admin module
 import {
   authRoutes,

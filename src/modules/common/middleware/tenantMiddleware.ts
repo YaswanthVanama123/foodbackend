@@ -36,6 +36,25 @@ function extractSubdomain(host: string): string | null {
   return null;
 }
 
+function normalizeHeaderSubdomain(value?: string | string[] | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  const normalized = rawValue.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const [candidate] = normalized.split('.');
+  if (candidate === 'www' || candidate === 'api') {
+    return null;
+  }
+
+  return candidate;
+}
+
 /**
  * Tenant Extraction Middleware
  *
@@ -116,7 +135,13 @@ export const extractTenant = async (
 
     // Extract subdomain from host
     const host = req.get('host') || req.hostname;
-    const subdomain = extractSubdomain(host);
+    const headerSubdomain = normalizeHeaderSubdomain(req.headers['x-subdomain']);
+    let subdomain = extractSubdomain(host);
+
+    if (!subdomain && process.env.NODE_ENV === 'development' && headerSubdomain) {
+      subdomain = headerSubdomain;
+      console.log('[Tenant] Falling back to x-subdomain header for tenant detection:', subdomain);
+    }
 
     // Validate subdomain exists
     if (!subdomain) {
