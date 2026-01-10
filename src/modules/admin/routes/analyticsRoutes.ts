@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  getAnalyticsPageData,
   getRevenueAnalytics,
   getPopularItems,
   getCategoryPerformance,
@@ -14,6 +15,9 @@ const router = express.Router();
 
 // All analytics routes require admin authentication
 router.use(authMiddleware);
+
+// Combined endpoint (most specific first)
+router.get('/page-data', getAnalyticsPageData); // OPTIMIZED: All analytics in 1 call
 
 router.get('/revenue', getRevenueAnalytics);
 router.get('/popular-items', getPopularItems);

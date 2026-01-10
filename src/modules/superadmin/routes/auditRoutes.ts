@@ -7,6 +7,7 @@ import {
   getLogsByActor,
   getLogsByResource,
   cleanupOldLogs,
+  getAuditLogsPageData,
 } from '../controllers/auditController';
 import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
@@ -19,6 +20,14 @@ const router = express.Router();
 
 // Apply super admin authentication to all routes
 router.use(superAdminAuth);
+
+/**
+ * @route   GET /api/super-admin/audit-logs/page-data
+ * @desc    Get audit logs page data (logs + admins) - OPTIMIZED (SINGLE REQUEST)
+ * @access  Super Admin Only
+ * @query   action, actorType, actorId, resourceType, resourceId, severity, startDate, endDate, search, page, limit, sort
+ */
+router.get('/page-data', getAuditLogsPageData);
 
 /**
  * @route   GET /api/super-admin/audit-logs

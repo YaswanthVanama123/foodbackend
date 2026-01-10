@@ -150,11 +150,25 @@ const subscriptionSchema = new Schema<ISubscription>({
   timestamps: true,
 });
 
-// Indexes for performance
-subscriptionSchema.index({ restaurantId: 1, status: 1 });
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
+// Compound index for fast subscription checks (CRITICAL OPTIMIZATION)
+subscriptionSchema.index({ restaurantId: 1, status: 1, endDate: -1 });
+
+// Compound index for finding expiring subscriptions
 subscriptionSchema.index({ endDate: 1, status: 1 });
+
+// Compound index for auto-renewal processing
 subscriptionSchema.index({ renewalDate: 1, autoRenew: 1 });
+
+// Additional indexes for common queries
+subscriptionSchema.index({ restaurantId: 1 });
+subscriptionSchema.index({ planId: 1 });
+subscriptionSchema.index({ status: 1 });
 subscriptionSchema.index({ createdAt: -1 });
+
+// TTL index for automatic cleanup of expired subscriptions (30 days after expiry)
+// This will automatically delete expired subscriptions after 30 days
+subscriptionSchema.index({ endDate: 1 }, { expireAfterSeconds: 2592000, partialFilterExpression: { status: 'expired' } });
 
 // Pre-save hook to set renewal date
 subscriptionSchema.pre('save', function(next) {

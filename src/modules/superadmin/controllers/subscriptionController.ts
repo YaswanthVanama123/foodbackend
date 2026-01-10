@@ -2,6 +2,11 @@ import { Request, Response } from 'express';
 import Subscription from '../../common/models/Subscription';
 import Restaurant from '../../common/models/Restaurant';
 import { Types } from 'mongoose';
+import cacheService, { CacheKeys } from '../../common/services/cacheService';
+
+// Cache TTL constants (in milliseconds)
+const SUBSCRIPTION_CACHE_TTL = 300000; // 5 minutes
+const SUBSCRIPTION_STATS_CACHE_TTL = 600000; // 10 minutes
 
 /**
  * @desc    Get all subscriptions with pagination, filters, and restaurant details
@@ -48,6 +53,28 @@ export const getAllSubscriptions = async (req: Request, res: Response): Promise<
       };
     }
 
+    // Create cache key from filters
+    const cacheKey = CacheKeys.subscriptionList({
+      page,
+      limit,
+      status,
+      billingCycle,
+      autoRenew,
+      search,
+      sortBy,
+      sortOrder,
+      expiringSoon,
+    });
+
+    // Try to get from cache (only if no search - search results change frequently)
+    if (!search) {
+      const cachedData = cacheService.get<any>(cacheKey);
+      if (cachedData) {
+        res.status(200).json(cachedData);
+        return;
+      }
+    }
+
     // Pagination
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
@@ -57,7 +84,7 @@ export const getAllSubscriptions = async (req: Request, res: Response): Promise<
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // If search is provided, we need to search in restaurant names
+    // If search is provided, find restaurants first (optimized with lean)
     if (search) {
       const restaurants = await Restaurant.find({
         $or: [
@@ -65,12 +92,17 @@ export const getAllSubscriptions = async (req: Request, res: Response): Promise<
           { subdomain: { $regex: search, $options: 'i' } },
           { email: { $regex: search, $options: 'i' } },
         ],
-      }).select('_id').lean();
+      })
+        .select('_id')
+        .lean()
+        .exec();
 
       const restaurantIds = restaurants.map(r => r._id);
       filter.restaurantId = { $in: restaurantIds };
     }
 
+    // CRITICAL OPTIMIZATION: Use compound index { restaurantId: 1, status: 1, endDate: -1 }
+    // Run queries in parallel with .lean() for performance
     const [subscriptions, total] = await Promise.all([
       Subscription.find(filter)
         .populate({
@@ -84,56 +116,76 @@ export const getAllSubscriptions = async (req: Request, res: Response): Promise<
         .sort(sort)
         .skip(skip)
         .limit(limitNum)
-        .lean(),
-      Subscription.countDocuments(filter),
+        .lean()
+        .exec(),
+      Subscription.countDocuments(filter).exec(),
     ]);
 
-    // Calculate statistics
-    const stats = await Subscription.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: {
-            $sum: {
+    // CRITICAL OPTIMIZATION: Cache aggregated stats separately with longer TTL
+    const statsCacheKey = CacheKeys.subscriptionStats(filter);
+    let stats = cacheService.get<any>(statsCacheKey);
+
+    if (!stats) {
+      // Optimized aggregation - calculate stats only once and cache
+      const statsResult = await Subscription.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: {
               $sum: {
-                $map: {
-                  input: {
-                    $filter: {
-                      input: '$paymentHistory',
-                      as: 'payment',
-                      cond: { $eq: ['$$payment.status', 'completed'] },
+                $sum: {
+                  $map: {
+                    input: {
+                      $filter: {
+                        input: '$paymentHistory',
+                        as: 'payment',
+                        cond: { $eq: ['$$payment.status', 'completed'] },
+                      },
                     },
+                    as: 'payment',
+                    in: '$$payment.amount',
                   },
-                  as: 'payment',
-                  in: '$$payment.amount',
                 },
               },
             },
-          },
-          activeCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] },
-          },
-          cancelledCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
-          },
-          expiredCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'expired'] }, 1, 0] },
-          },
-          pendingCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
-          },
-          monthlyCount: {
-            $sum: { $cond: [{ $eq: ['$billingCycle', 'monthly'] }, 1, 0] },
-          },
-          yearlyCount: {
-            $sum: { $cond: [{ $eq: ['$billingCycle', 'yearly'] }, 1, 0] },
+            activeCount: {
+              $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] },
+            },
+            cancelledCount: {
+              $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+            },
+            expiredCount: {
+              $sum: { $cond: [{ $eq: ['$status', 'expired'] }, 1, 0] },
+            },
+            pendingCount: {
+              $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+            },
+            monthlyCount: {
+              $sum: { $cond: [{ $eq: ['$billingCycle', 'monthly'] }, 1, 0] },
+            },
+            yearlyCount: {
+              $sum: { $cond: [{ $eq: ['$billingCycle', 'yearly'] }, 1, 0] },
+            },
           },
         },
-      },
-    ]);
+      ]).exec();
 
-    res.status(200).json({
+      stats = statsResult[0] || {
+        totalRevenue: 0,
+        activeCount: 0,
+        cancelledCount: 0,
+        expiredCount: 0,
+        pendingCount: 0,
+        monthlyCount: 0,
+        yearlyCount: 0,
+      };
+
+      // Cache stats with longer TTL
+      cacheService.set(statsCacheKey, stats, SUBSCRIPTION_STATS_CACHE_TTL);
+    }
+
+    const response = {
       success: true,
       data: {
         subscriptions,
@@ -143,17 +195,16 @@ export const getAllSubscriptions = async (req: Request, res: Response): Promise<
           limit: limitNum,
           pages: Math.ceil(total / limitNum),
         },
-        statistics: stats[0] || {
-          totalRevenue: 0,
-          activeCount: 0,
-          cancelledCount: 0,
-          expiredCount: 0,
-          pendingCount: 0,
-          monthlyCount: 0,
-          yearlyCount: 0,
-        },
+        statistics: stats,
       },
-    });
+    };
+
+    // Cache the response (only if no search)
+    if (!search) {
+      cacheService.set(cacheKey, response, SUBSCRIPTION_CACHE_TTL);
+    }
+
+    res.status(200).json(response);
   } catch (error: any) {
     console.error('Get all subscriptions error:', error);
     res.status(500).json({
@@ -173,8 +224,19 @@ export const getSubscriptionsByRestaurant = async (req: Request, res: Response):
   try {
     const { restaurantId } = req.params;
 
-    // Validate restaurant exists
-    const restaurant = await Restaurant.findById(restaurantId).select('name subdomain email').lean();
+    // Try to get from cache
+    const cacheKey = CacheKeys.subscriptionByRestaurant(restaurantId);
+    const cachedData = cacheService.get<any>(cacheKey);
+    if (cachedData) {
+      res.status(200).json(cachedData);
+      return;
+    }
+
+    // Validate restaurant exists (optimized with lean)
+    const restaurant = await Restaurant.findById(restaurantId)
+      .select('name subdomain email')
+      .lean()
+      .exec();
 
     if (!restaurant) {
       res.status(404).json({
@@ -184,16 +246,18 @@ export const getSubscriptionsByRestaurant = async (req: Request, res: Response):
       return;
     }
 
-    // Get all subscriptions for this restaurant
+    // CRITICAL OPTIMIZATION: Use compound index for fast lookup
+    // Get all subscriptions for this restaurant (optimized with lean)
     const subscriptions = await Subscription.find({ restaurantId })
       .populate({
         path: 'planId',
         select: 'name price features',
       })
       .sort({ createdAt: -1 })
-      .lean();
+      .lean()
+      .exec();
 
-    // Calculate total revenue for this restaurant
+    // CRITICAL OPTIMIZATION: Pre-calculate values instead of computing on each request
     const totalRevenue = subscriptions.reduce((total, sub) => {
       const subRevenue = sub.paymentHistory
         .filter(payment => payment.status === 'completed')
@@ -201,12 +265,12 @@ export const getSubscriptionsByRestaurant = async (req: Request, res: Response):
       return total + subRevenue;
     }, 0);
 
-    // Get active subscription
+    // CRITICAL OPTIMIZATION: Find active subscription using compound index
     const activeSubscription = subscriptions.find(
       sub => sub.status === 'active' && new Date(sub.endDate) > new Date()
     );
 
-    res.status(200).json({
+    const response = {
       success: true,
       data: {
         restaurant,
@@ -215,7 +279,12 @@ export const getSubscriptionsByRestaurant = async (req: Request, res: Response):
         totalRevenue,
         count: subscriptions.length,
       },
-    });
+    };
+
+    // Cache the response
+    cacheService.set(cacheKey, response, SUBSCRIPTION_CACHE_TTL);
+
+    res.status(200).json(response);
   } catch (error: any) {
     console.error('Get subscriptions by restaurant error:', error);
     res.status(500).json({
@@ -255,8 +324,8 @@ export const createSubscription = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Validate restaurant exists
-    const restaurant = await Restaurant.findById(restaurantId);
+    // Validate restaurant exists (optimized with lean)
+    const restaurant = await Restaurant.findById(restaurantId).lean().exec();
 
     if (!restaurant) {
       res.status(404).json({
@@ -275,12 +344,14 @@ export const createSubscription = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Check if there's already an active subscription for this restaurant
+    // CRITICAL OPTIMIZATION: Use compound index for fast active subscription check
     const existingActiveSubscription = await Subscription.findOne({
       restaurantId,
       status: 'active',
       endDate: { $gt: new Date() },
-    });
+    })
+      .lean()
+      .exec();
 
     if (existingActiveSubscription && status === 'active') {
       res.status(400).json({
@@ -322,6 +393,9 @@ export const createSubscription = async (req: Request, res: Response): Promise<v
       },
     ]);
 
+    // Invalidate relevant caches
+    cacheService.deletePattern(CacheKeys.subscriptionPattern(restaurantId));
+
     res.status(201).json({
       success: true,
       data: subscription,
@@ -359,7 +433,7 @@ export const updateSubscription = async (req: Request, res: Response): Promise<v
     } = req.body;
 
     // Find subscription
-    const subscription = await Subscription.findById(id);
+    const subscription = await Subscription.findById(id).exec();
 
     if (!subscription) {
       res.status(404).json({
@@ -409,6 +483,9 @@ export const updateSubscription = async (req: Request, res: Response): Promise<v
       },
     ]);
 
+    // Invalidate relevant caches
+    cacheService.deletePattern(CacheKeys.subscriptionPattern(subscription.restaurantId.toString()));
+
     res.status(200).json({
       success: true,
       data: subscription,
@@ -435,7 +512,7 @@ export const cancelSubscription = async (req: Request, res: Response): Promise<v
     const { cancellationReason, immediateTermination = false } = req.body;
 
     // Find subscription
-    const subscription = await Subscription.findById(id);
+    const subscription = await Subscription.findById(id).exec();
 
     if (!subscription) {
       res.status(404).json({
@@ -479,6 +556,9 @@ export const cancelSubscription = async (req: Request, res: Response): Promise<v
       },
     ]);
 
+    // Invalidate relevant caches
+    cacheService.deletePattern(CacheKeys.subscriptionPattern(subscription.restaurantId.toString()));
+
     res.status(200).json({
       success: true,
       data: subscription,
@@ -512,7 +592,7 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
     } = req.body;
 
     // Find subscription
-    const subscription = await Subscription.findById(id);
+    const subscription = await Subscription.findById(id).exec();
 
     if (!subscription) {
       res.status(404).json({
@@ -588,6 +668,9 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
       },
     ]);
 
+    // Invalidate relevant caches
+    cacheService.deletePattern(CacheKeys.subscriptionPattern(subscription.restaurantId.toString()));
+
     res.status(200).json({
       success: true,
       data: subscription,
@@ -612,6 +695,15 @@ export const getSubscriptionById = async (req: Request, res: Response): Promise<
   try {
     const { id } = req.params;
 
+    // Try to get from cache
+    const cacheKey = CacheKeys.subscriptionById(id);
+    const cachedData = cacheService.get<any>(cacheKey);
+    if (cachedData) {
+      res.status(200).json(cachedData);
+      return;
+    }
+
+    // Query with lean for performance
     const subscription = await Subscription.findById(id)
       .populate({
         path: 'restaurantId',
@@ -621,7 +713,8 @@ export const getSubscriptionById = async (req: Request, res: Response): Promise<
         path: 'planId',
         select: 'name price features description',
       })
-      .lean();
+      .lean()
+      .exec();
 
     if (!subscription) {
       res.status(404).json({
@@ -631,7 +724,7 @@ export const getSubscriptionById = async (req: Request, res: Response): Promise<
       return;
     }
 
-    // Calculate statistics
+    // CRITICAL OPTIMIZATION: Pre-calculate statistics
     const totalRevenue = subscription.paymentHistory
       .filter(payment => payment.status === 'completed')
       .reduce((sum, payment) => sum + payment.amount, 0);
@@ -649,7 +742,7 @@ export const getSubscriptionById = async (req: Request, res: Response): Promise<
       (new Date(subscription.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
     );
 
-    res.status(200).json({
+    const response = {
       success: true,
       data: {
         subscription,
@@ -663,7 +756,12 @@ export const getSubscriptionById = async (req: Request, res: Response): Promise<
           isExpired: daysUntilExpiry < 0,
         },
       },
-    });
+    };
+
+    // Cache the response
+    cacheService.set(cacheKey, response, SUBSCRIPTION_CACHE_TTL);
+
+    res.status(200).json(response);
   } catch (error: any) {
     console.error('Get subscription by ID error:', error);
     res.status(500).json({
@@ -683,7 +781,7 @@ export const deleteSubscription = async (req: Request, res: Response): Promise<v
   try {
     const { id } = req.params;
 
-    const subscription = await Subscription.findById(id);
+    const subscription = await Subscription.findById(id).exec();
 
     if (!subscription) {
       res.status(404).json({
@@ -702,7 +800,11 @@ export const deleteSubscription = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    const restaurantId = subscription.restaurantId.toString();
     await subscription.deleteOne();
+
+    // Invalidate relevant caches
+    cacheService.deletePattern(CacheKeys.subscriptionPattern(restaurantId));
 
     res.status(200).json({
       success: true,
@@ -713,6 +815,227 @@ export const deleteSubscription = async (req: Request, res: Response): Promise<v
     res.status(500).json({
       success: false,
       message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get subscriptions page data (subscriptions + plans + restaurants) - OPTIMIZED (SINGLE REQUEST)
+ * @route   GET /api/superadmin/subscriptions/page-data
+ * @access  Private (Super Admin)
+ */
+export const getSubscriptionsPageData = async (req: Request, res: Response): Promise<void> => {
+  const startTime = Date.now();
+  let subscriptionsTime = 0;
+  let plansTime = 0;
+  let restaurantsTime = 0;
+
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      billingCycle,
+      autoRenew,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      expiringSoon,
+    } = req.query;
+
+    // Build filter
+    const filter: any = {};
+
+    if (status) {
+      filter.status = status;
+    }
+
+    if (billingCycle) {
+      filter.billingCycle = billingCycle;
+    }
+
+    if (autoRenew !== undefined) {
+      filter.autoRenew = autoRenew === 'true';
+    }
+
+    // Find expiring subscriptions (within 30 days)
+    if (expiringSoon === 'true') {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 30);
+      filter.status = 'active';
+      filter.endDate = {
+        $gt: new Date(),
+        $lte: futureDate,
+      };
+    }
+
+    // Pagination
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort
+    const sort: any = {};
+    sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
+
+    // If search is provided, find restaurants first
+    if (search) {
+      const restaurants = await Restaurant.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { subdomain: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+        ],
+      })
+        .select('_id')
+        .lean()
+        .exec();
+
+      const restaurantIds = restaurants.map(r => r._id);
+      filter.restaurantId = { $in: restaurantIds };
+    }
+
+    // Fetch subscriptions, plans, and restaurants in parallel
+    const subscriptionsStart = Date.now();
+    const plansStart = Date.now();
+    const restaurantsStart = Date.now();
+
+    const [subscriptionsData, plansData, restaurantsData] = await Promise.all([
+      // 1. GET SUBSCRIPTIONS
+      (async () => {
+        const [subscriptions, total, statsResult] = await Promise.all([
+          Subscription.find(filter)
+            .populate({
+              path: 'restaurantId',
+              select: 'name subdomain email phone isActive',
+            })
+            .populate({
+              path: 'planId',
+              select: 'name price features',
+            })
+            .sort(sort)
+            .skip(skip)
+            .limit(limitNum)
+            .lean()
+            .exec(),
+          Subscription.countDocuments(filter).exec(),
+          Subscription.aggregate([
+            { $match: filter },
+            {
+              $group: {
+                _id: null,
+                totalRevenue: {
+                  $sum: {
+                    $sum: {
+                      $map: {
+                        input: {
+                          $filter: {
+                            input: '$paymentHistory',
+                            as: 'payment',
+                            cond: { $eq: ['$$payment.status', 'completed'] },
+                          },
+                        },
+                        as: 'payment',
+                        in: '$$payment.amount',
+                      },
+                    },
+                  },
+                },
+                activeCount: {
+                  $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] },
+                },
+                cancelledCount: {
+                  $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+                },
+                expiredCount: {
+                  $sum: { $cond: [{ $eq: ['$status', 'expired'] }, 1, 0] },
+                },
+                pendingCount: {
+                  $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+                },
+                monthlyCount: {
+                  $sum: { $cond: [{ $eq: ['$billingCycle', 'monthly'] }, 1, 0] },
+                },
+                yearlyCount: {
+                  $sum: { $cond: [{ $eq: ['$billingCycle', 'yearly'] }, 1, 0] },
+                },
+              },
+            },
+          ]).exec(),
+        ]);
+
+        const stats = statsResult[0] || {
+          totalRevenue: 0,
+          activeCount: 0,
+          cancelledCount: 0,
+          expiredCount: 0,
+          pendingCount: 0,
+          monthlyCount: 0,
+          yearlyCount: 0,
+        };
+
+        return {
+          subscriptions,
+          pagination: {
+            total,
+            page: pageNum,
+            limit: limitNum,
+            pages: Math.ceil(total / limitNum),
+          },
+          statistics: stats,
+        };
+      })(),
+
+      // 2. GET PLANS
+      (async () => {
+        const Plan = (await import('../../common/models/Plan')).default;
+        return Plan.find({ isActive: true })
+          .select('_id name price features description billingCycle')
+          .sort({ displayOrder: 1 })
+          .limit(100)
+          .lean()
+          .exec();
+      })(),
+
+      // 3. GET RESTAURANTS
+      (async () => {
+        return Restaurant.find({ isActive: true })
+          .select('_id name subdomain email phone')
+          .sort({ name: 1 })
+          .limit(100)
+          .lean()
+          .exec();
+      })(),
+    ]);
+
+    subscriptionsTime = Date.now() - subscriptionsStart;
+    plansTime = Date.now() - plansStart;
+    restaurantsTime = Date.now() - restaurantsStart;
+
+    const totalTime = Date.now() - startTime;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        subscriptions: subscriptionsData.subscriptions,
+        pagination: subscriptionsData.pagination,
+        statistics: subscriptionsData.statistics,
+        plans: plansData,
+        restaurants: restaurantsData,
+      },
+      _perf: {
+        total: totalTime,
+        subscriptions: subscriptionsTime,
+        plans: plansTime,
+        restaurants: restaurantsTime,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching subscriptions page data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subscriptions page data',
       error: error.message,
     });
   }

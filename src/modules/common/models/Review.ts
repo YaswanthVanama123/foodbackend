@@ -105,12 +105,24 @@ const reviewSchema = new Schema<IReview>(
 );
 
 // CRITICAL: Indexes for multi-tenancy and query performance
+// Compound index for filtering reviews by restaurant and created date
 reviewSchema.index({ restaurantId: 1, createdAt: -1 });
+
+// CRITICAL: Compound index for menu item reviews sorted by rating
+reviewSchema.index({ menuItemId: 1, rating: -1 });
+
+// CRITICAL: Compound index for checking existing reviews (menuItemId + customerId)
+// Optimizes duplicate review checks and customer's reviews on specific items
+reviewSchema.index({ menuItemId: 1, customerId: 1 });
+
+// Additional indexes for common queries
 reviewSchema.index({ restaurantId: 1, menuItemId: 1 });
 reviewSchema.index({ restaurantId: 1, menuItemId: 1, isVisible: 1 });
 reviewSchema.index({ restaurantId: 1, customerId: 1 });
 reviewSchema.index({ restaurantId: 1, orderId: 1 });
 reviewSchema.index({ restaurantId: 1, rating: -1 });
+reviewSchema.index({ customerId: 1 });
+reviewSchema.index({ orderId: 1 });
 
 // Compound unique index to prevent duplicate reviews for same order/menuItem
 reviewSchema.index(

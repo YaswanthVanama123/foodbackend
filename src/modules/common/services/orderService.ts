@@ -35,19 +35,48 @@ export const calculateItemSubtotal = (price: number, quantity: number, customiza
 
 // Get active orders (tenant-scoped)
 export const getActiveOrders = async (restaurantId: string) => {
-  return await Order.find({
-    restaurantId,
-    status: { $in: ['received', 'preparing', 'ready'] },
-  })
-    .populate('tableId', 'tableNumber')
-    .sort({ createdAt: -1 });
+  return await Order.find(
+    {
+      restaurantId,
+      status: { $in: ['received', 'preparing', 'ready'] },
+    },
+    {
+      // Select only required fields for performance
+      orderNumber: 1,
+      tableNumber: 1,
+      tableId: 1,
+      items: 1,
+      total: 1,
+      status: 1,
+      createdAt: 1,
+      customerId: 1,
+    }
+  )
+    .populate('tableId', 'tableNumber location')
+    .sort({ createdAt: -1 })
+    .lean()
+    .exec();
 };
 
 // Get orders by table (tenant-scoped)
 export const getOrdersByTable = async (tableId: string, restaurantId: string) => {
-  return await Order.find({ tableId, restaurantId })
+  return await Order.find(
+    { tableId, restaurantId },
+    {
+      // Select only required fields for performance
+      orderNumber: 1,
+      tableNumber: 1,
+      items: 1,
+      total: 1,
+      status: 1,
+      createdAt: 1,
+      customerId: 1,
+    }
+  )
     .sort({ createdAt: -1 })
-    .limit(10);
+    .limit(10)
+    .lean()
+    .exec();
 };
 
 // Update order status (tenant-scoped)
@@ -95,44 +124,74 @@ export const getDashboardStats = async (restaurantId: string) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const totalOrdersToday = await Order.countDocuments({
-    restaurantId,
-    createdAt: { $gte: today },
-  });
-
-  const activeOrders = await Order.countDocuments({
-    restaurantId,
-    status: { $in: ['received', 'preparing', 'ready'] },
-  });
-
-  const servedOrdersToday = await Order.countDocuments({
-    restaurantId,
-    createdAt: { $gte: today },
-    status: 'served',
-  });
-
-  const revenueResult = await Order.aggregate([
+  // Optimize with single aggregation pipeline instead of multiple queries
+  const stats = await Order.aggregate([
     {
       $match: {
         restaurantId,
-        createdAt: { $gte: today },
-        status: 'served',
       },
     },
     {
-      $group: {
-        _id: null,
-        total: { $sum: '$total' },
+      $facet: {
+        // Total orders today
+        totalOrdersToday: [
+          {
+            $match: {
+              createdAt: { $gte: today },
+            },
+          },
+          {
+            $count: 'count',
+          },
+        ],
+        // Active orders count
+        activeOrders: [
+          {
+            $match: {
+              status: { $in: ['received', 'preparing', 'ready'] },
+            },
+          },
+          {
+            $count: 'count',
+          },
+        ],
+        // Served orders today
+        servedOrdersToday: [
+          {
+            $match: {
+              createdAt: { $gte: today },
+              status: 'served',
+            },
+          },
+          {
+            $count: 'count',
+          },
+        ],
+        // Revenue today
+        revenueToday: [
+          {
+            $match: {
+              createdAt: { $gte: today },
+              status: 'served',
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$total' },
+            },
+          },
+        ],
       },
     },
   ]);
 
-  const revenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
+  const result = stats[0];
 
   return {
-    totalOrdersToday,
-    activeOrders,
-    servedOrdersToday,
-    revenue: parseFloat(revenue.toFixed(2)),
+    totalOrdersToday: result.totalOrdersToday[0]?.count || 0,
+    activeOrders: result.activeOrders[0]?.count || 0,
+    servedOrdersToday: result.servedOrdersToday[0]?.count || 0,
+    revenue: parseFloat((result.revenueToday[0]?.total || 0).toFixed(2)),
   };
 };

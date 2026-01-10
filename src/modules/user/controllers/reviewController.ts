@@ -4,6 +4,22 @@ import Order from '../../common/models/Order';
 import MenuItem from '../../common/models/MenuItem';
 import mongoose from 'mongoose';
 import { updateMenuItemRating } from '../../common/utils/ratingUtils';
+import cacheService, { CacheKeys } from '../../common/services/cacheService';
+
+/**
+ * OPTIMIZED REVIEW CONTROLLER
+ *
+ * Optimizations implemented:
+ * 1. Cache review aggregations (average rating) with 5-minute TTL
+ * 2. Compound index: { menuItemId: 1, customerId: 1 } (already in Review model)
+ * 3. Cursor-based pagination for better performance on large datasets
+ * 4. Lean queries to reduce memory overhead
+ * 5. Parallel query execution where possible
+ * 6. Cache invalidation on mutations
+ * 7. Optimized aggregation pipelines
+ *
+ * Target: Reviews <50ms
+ */
 
 // @desc    Create review
 // @route   POST /api/reviews
@@ -11,7 +27,7 @@ import { updateMenuItemRating } from '../../common/utils/ratingUtils';
 export const createReview = async (req: Request, res: Response): Promise<void> => {
   try {
     const { orderId, menuItemId, rating, comment } = req.body;
-    const customerId = req.customer?._id; // From customer auth middleware
+    const customerId = req.customer?._id;
 
     if (!customerId) {
       res.status(401).json({
@@ -21,11 +37,23 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // CRITICAL: Verify order exists and belongs to this restaurant
-    const order = await Order.findOne({
-      _id: orderId,
-      restaurantId: req.restaurantId,
-    }).lean().exec();
+    // Parallel validation queries
+    const [order, menuItem] = await Promise.all([
+      Order.findOne({
+        _id: orderId,
+        restaurantId: req.restaurantId,
+      })
+        .lean()
+        .exec(),
+      menuItemId
+        ? MenuItem.findOne({
+            _id: menuItemId,
+            restaurantId: req.restaurantId,
+          })
+            .lean()
+            .exec()
+        : null,
+    ]);
 
     if (!order) {
       res.status(404).json({
@@ -35,7 +63,6 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Verify order is completed (served)
     if (order.status !== 'served') {
       res.status(400).json({
         success: false,
@@ -44,13 +71,7 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // If menuItemId provided, verify it exists in the order
     if (menuItemId) {
-      const menuItem = await MenuItem.findOne({
-        _id: menuItemId,
-        restaurantId: req.restaurantId,
-      }).lean().exec();
-
       if (!menuItem) {
         res.status(404).json({
           success: false,
@@ -59,7 +80,6 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
         return;
       }
 
-      // Verify menu item was in the order
       const itemInOrder = order.items.some(
         (item) => item.menuItemId.toString() === menuItemId
       );
@@ -73,13 +93,16 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
       }
     }
 
-    // Check if review already exists
+    // Check for existing review (using compound index)
     const existingReview = await Review.findOne({
       restaurantId: req.restaurantId,
       orderId,
       customerId,
       ...(menuItemId ? { menuItemId } : { menuItemId: { $exists: false } }),
-    });
+    })
+      .select('_id')
+      .lean()
+      .exec();
 
     if (existingReview) {
       res.status(400).json({
@@ -99,16 +122,21 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
       comment,
     });
 
-    // Update menu item rating cache if this is a menu item review
+    // Invalidate cache for this menu item/restaurant
+    const restaurantIdStr = req.restaurantId!.toString();
     if (menuItemId) {
-      try {
-        await updateMenuItemRating(menuItemId);
-      } catch (error) {
-        console.error('Error updating menu item rating:', error);
-        // Don't fail the request if rating update fails
-      }
+      cacheService.deletePattern(
+        CacheKeys.reviewItemPattern(restaurantIdStr, menuItemId)
+      );
+      // Update rating cache asynchronously (don't block response)
+      updateMenuItemRating(menuItemId).catch((error) =>
+        console.error('Error updating menu item rating:', error)
+      );
+    } else {
+      cacheService.deletePattern(CacheKeys.reviewPattern(restaurantIdStr));
     }
 
+    // Populate review for response (lean query)
     const populatedReview = await Review.findById(review._id)
       .populate('menuItemId', 'name image')
       .populate('orderId', 'orderNumber')
@@ -129,7 +157,7 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
   }
 };
 
-// @desc    Get reviews with filters
+// @desc    Get reviews with cursor-based pagination
 // @route   GET /api/reviews
 // @access  Public
 export const getReviews = async (req: Request, res: Response): Promise<void> => {
@@ -139,55 +167,81 @@ export const getReviews = async (req: Request, res: Response): Promise<void> => 
       orderId,
       customerId,
       minRating,
-      page = 1,
       limit = 20,
+      cursor, // Cursor for pagination (review _id)
       sortBy = 'createdAt',
       order = 'desc',
     } = req.query;
 
-    // CRITICAL: Filter by restaurant
+    // Build filter
     const filter: any = {
       restaurantId: req.restaurantId,
-      isVisible: true, // Only show visible reviews publicly
+      isVisible: true,
     };
 
-    if (menuItemId) {
-      filter.menuItemId = menuItemId;
+    if (menuItemId) filter.menuItemId = menuItemId;
+    if (orderId) filter.orderId = orderId;
+    if (customerId) filter.customerId = customerId;
+    if (minRating) filter.rating = { $gte: Number(minRating) };
+
+    // Cursor-based pagination for better performance
+    if (cursor) {
+      const sortOrder = order === 'asc' ? '$gt' : '$lt';
+      filter._id = { [sortOrder]: new mongoose.Types.ObjectId(cursor as string) };
     }
 
-    if (orderId) {
-      filter.orderId = orderId;
-    }
-
-    if (customerId) {
-      filter.customerId = customerId;
-    }
-
-    if (minRating) {
-      filter.rating = { $gte: Number(minRating) };
-    }
-
-    const skip = (Number(page) - 1) * Number(limit);
     const sortOrder = order === 'asc' ? 1 : -1;
+    const limitNum = Math.min(Number(limit), 100); // Cap at 100
 
-    const [reviews, total] = await Promise.all([
-      Review.find(filter)
+    // Try cache first (only for common queries without customerId/orderId)
+    let reviews: any[] | null = null;
+    const cacheKey =
+      !customerId && !orderId
+        ? CacheKeys.reviewList(req.restaurantId!.toString(), {
+            menuItemId,
+            minRating,
+            limit: limitNum,
+            cursor,
+            sortBy,
+            order,
+          })
+        : null;
+
+    if (cacheKey) {
+      reviews = await cacheService.get<any[]>(cacheKey);
+    }
+
+    if (!reviews) {
+      // Optimized query with lean() and minimal population
+      reviews = await Review.find(filter)
+        .select('_id rating comment helpfulCount createdAt menuItemId orderId')
         .populate('menuItemId', 'name image price')
-        .populate('orderId', 'orderNumber createdAt')
-        .sort({ [sortBy as string]: sortOrder })
-        .skip(skip)
-        .limit(Number(limit))
+        .populate('orderId', 'orderNumber')
+        .sort({ [sortBy as string]: sortOrder, _id: sortOrder })
+        .limit(limitNum + 1) // Fetch one extra to check if there's more
         .lean()
-        .exec(),
-      Review.countDocuments(filter),
-    ]);
+        .exec();
+
+      // Cache for 2 minutes
+      if (cacheKey) {
+        cacheService.set(cacheKey, reviews, 120000);
+      }
+    }
+
+    // Check if there are more results
+    const hasMore = reviews.length > limitNum;
+    if (hasMore) {
+      reviews = reviews.slice(0, limitNum);
+    }
+
+    // Get next cursor
+    const nextCursor = hasMore ? reviews[reviews.length - 1]._id : null;
 
     res.status(200).json({
       success: true,
       count: reviews.length,
-      total,
-      page: Number(page),
-      pages: Math.ceil(total / Number(limit)),
+      hasMore,
+      nextCursor,
       data: reviews,
     });
   } catch (error: any) {
@@ -215,33 +269,41 @@ export const getMyReviews = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const { limit = 20, cursor } = req.query;
+    const limitNum = Math.min(Number(limit), 100);
 
-    // CRITICAL: Filter by restaurant and customer
-    const filter = {
+    // Build filter with cursor
+    const filter: any = {
       restaurantId: req.restaurantId,
       customerId,
     };
 
-    const [reviews, total] = await Promise.all([
-      Review.find(filter)
-        .populate('menuItemId', 'name image price')
-        .populate('orderId', 'orderNumber createdAt')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit))
-        .lean()
-        .exec(),
-      Review.countDocuments(filter),
-    ]);
+    if (cursor) {
+      filter._id = { $lt: new mongoose.Types.ObjectId(cursor as string) };
+    }
+
+    // Optimized query
+    const reviews = await Review.find(filter)
+      .select('_id rating comment createdAt menuItemId orderId')
+      .populate('menuItemId', 'name image price')
+      .populate('orderId', 'orderNumber')
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limitNum + 1)
+      .lean()
+      .exec();
+
+    const hasMore = reviews.length > limitNum;
+    if (hasMore) {
+      reviews.pop();
+    }
+
+    const nextCursor = hasMore ? reviews[reviews.length - 1]._id : null;
 
     res.status(200).json({
       success: true,
       count: reviews.length,
-      total,
-      page: Number(page),
-      pages: Math.ceil(total / Number(limit)),
+      hasMore,
+      nextCursor,
       data: reviews,
     });
   } catch (error: any) {
@@ -256,7 +318,7 @@ export const getMyReviews = async (req: Request, res: Response): Promise<void> =
 
 // @desc    Update own review
 // @route   PUT /api/reviews/:id
-// @access  Protected (Customer - own reviews only)
+// @access  Protected (Customer)
 export const updateReview = async (req: Request, res: Response): Promise<void> => {
   try {
     const { rating, comment } = req.body;
@@ -270,7 +332,6 @@ export const updateReview = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // CRITICAL: Find review with restaurantId and customerId validation
     const review = await Review.findOne({
       _id: req.params.id,
       restaurantId: req.restaurantId,
@@ -285,24 +346,22 @@ export const updateReview = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Update fields
-    if (rating !== undefined) {
-      review.rating = rating;
-    }
-    if (comment !== undefined) {
-      review.comment = comment;
-    }
+    if (rating !== undefined) review.rating = rating;
+    if (comment !== undefined) review.comment = comment;
 
     await review.save();
 
-    // Update menu item rating cache if this is a menu item review
+    // Invalidate cache
+    const restaurantIdStr = req.restaurantId!.toString();
     if (review.menuItemId) {
-      try {
-        await updateMenuItemRating(review.menuItemId);
-      } catch (error) {
-        console.error('Error updating menu item rating:', error);
-        // Don't fail the request if rating update fails
-      }
+      cacheService.deletePattern(
+        CacheKeys.reviewItemPattern(restaurantIdStr, review.menuItemId.toString())
+      );
+      updateMenuItemRating(review.menuItemId).catch((error) =>
+        console.error('Error updating menu item rating:', error)
+      );
+    } else {
+      cacheService.deletePattern(CacheKeys.reviewPattern(restaurantIdStr));
     }
 
     const populatedReview = await Review.findById(review._id)
@@ -327,7 +386,7 @@ export const updateReview = async (req: Request, res: Response): Promise<void> =
 
 // @desc    Delete own review
 // @route   DELETE /api/reviews/:id
-// @access  Protected (Customer - own reviews only)
+// @access  Protected (Customer)
 export const deleteReview = async (req: Request, res: Response): Promise<void> => {
   try {
     const customerId = req.customer?._id;
@@ -340,7 +399,6 @@ export const deleteReview = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // CRITICAL: Find and delete review with restaurantId and customerId validation
     const review = await Review.findOneAndDelete({
       _id: req.params.id,
       restaurantId: req.restaurantId,
@@ -355,14 +413,17 @@ export const deleteReview = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Update menu item rating cache if this was a menu item review
+    // Invalidate cache
+    const restaurantIdStr = req.restaurantId!.toString();
     if (review.menuItemId) {
-      try {
-        await updateMenuItemRating(review.menuItemId);
-      } catch (error) {
-        console.error('Error updating menu item rating:', error);
-        // Don't fail the request if rating update fails
-      }
+      cacheService.deletePattern(
+        CacheKeys.reviewItemPattern(restaurantIdStr, review.menuItemId.toString())
+      );
+      updateMenuItemRating(review.menuItemId).catch((error) =>
+        console.error('Error updating menu item rating:', error)
+      );
+    } else {
+      cacheService.deletePattern(CacheKeys.reviewPattern(restaurantIdStr));
     }
 
     res.status(200).json({
@@ -394,7 +455,6 @@ export const markHelpful = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // CRITICAL: Find review with restaurantId validation
     const review = await Review.findOne({
       _id: req.params.id,
       restaurantId: req.restaurantId,
@@ -408,15 +468,12 @@ export const markHelpful = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Toggle helpful
     const helpfulIndex = review.helpfulBy.indexOf(customerId);
 
     if (helpfulIndex > -1) {
-      // Remove from helpful
       review.helpfulBy.splice(helpfulIndex, 1);
       review.helpfulCount = Math.max(0, review.helpfulCount - 1);
     } else {
-      // Add to helpful
       review.helpfulBy.push(customerId);
       review.helpfulCount += 1;
     }
@@ -440,18 +497,35 @@ export const markHelpful = async (req: Request, res: Response): Promise<void> =>
   }
 };
 
-// @desc    Get menu item ratings summary
+// @desc    Get menu item ratings summary (CACHED)
 // @route   GET /api/reviews/menu-item/:menuItemId/ratings
 // @access  Public
 export const getMenuItemRatings = async (req: Request, res: Response): Promise<void> => {
   try {
     const { menuItemId } = req.params;
+    const restaurantIdStr = req.restaurantId!.toString();
 
-    // Verify menu item exists and belongs to restaurant
+    // Try cache first (5-minute TTL)
+    const cacheKey = CacheKeys.reviewRatings(restaurantIdStr, menuItemId);
+    const cached = await cacheService.get<any>(cacheKey);
+
+    if (cached) {
+      res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+      return;
+    }
+
+    // Verify menu item exists
     const menuItem = await MenuItem.findOne({
       _id: menuItemId,
       restaurantId: req.restaurantId,
-    }).lean().exec();
+    })
+      .select('_id')
+      .lean()
+      .exec();
 
     if (!menuItem) {
       res.status(404).json({
@@ -461,58 +535,71 @@ export const getMenuItemRatings = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // CRITICAL: Aggregate ratings for this restaurant and menu item only
+    // Optimized aggregation
     const stats = await Review.aggregate([
       {
         $match: {
-          restaurantId: new mongoose.Types.ObjectId(req.restaurantId!.toString()),
+          restaurantId: new mongoose.Types.ObjectId(restaurantIdStr),
           menuItemId: new mongoose.Types.ObjectId(menuItemId),
           isVisible: true,
         },
       },
       {
-        $group: {
-          _id: null,
-          averageRating: { $avg: '$rating' },
-          totalReviews: { $sum: 1 },
-          ratingDistribution: {
-            $push: '$rating',
-          },
+        $facet: {
+          summary: [
+            {
+              $group: {
+                _id: null,
+                averageRating: { $avg: '$rating' },
+                totalReviews: { $sum: 1 },
+              },
+            },
+          ],
+          distribution: [
+            {
+              $group: {
+                _id: '$rating',
+                count: { $sum: 1 },
+              },
+            },
+          ],
         },
       },
     ]);
 
-    if (!stats.length) {
+    if (!stats[0].summary.length) {
+      const emptyResult = {
+        averageRating: 0,
+        totalReviews: 0,
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      };
+
+      cacheService.set(cacheKey, emptyResult, 300000); // 5 minutes
+
       res.status(200).json({
         success: true,
-        data: {
-          averageRating: 0,
-          totalReviews: 0,
-          ratingDistribution: {
-            1: 0,
-            2: 0,
-            3: 0,
-            4: 0,
-            5: 0,
-          },
-        },
+        data: emptyResult,
       });
       return;
     }
 
-    // Calculate rating distribution
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    stats[0].ratingDistribution.forEach((rating: number) => {
-      distribution[rating as keyof typeof distribution]++;
+    stats[0].distribution.forEach((item: any) => {
+      distribution[item._id as keyof typeof distribution] = item.count;
     });
+
+    const result = {
+      averageRating: Math.round(stats[0].summary[0].averageRating * 10) / 10,
+      totalReviews: stats[0].summary[0].totalReviews,
+      ratingDistribution: distribution,
+    };
+
+    // Cache for 5 minutes
+    cacheService.set(cacheKey, result, 300000);
 
     res.status(200).json({
       success: true,
-      data: {
-        averageRating: Math.round(stats[0].averageRating * 10) / 10,
-        totalReviews: stats[0].totalReviews,
-        ratingDistribution: distribution,
-      },
+      data: result,
     });
   } catch (error: any) {
     console.error('Get menu item ratings error:', error);
@@ -524,62 +611,90 @@ export const getMenuItemRatings = async (req: Request, res: Response): Promise<v
   }
 };
 
-// @desc    Get restaurant ratings summary
+// @desc    Get restaurant ratings summary (CACHED)
 // @route   GET /api/reviews/restaurant/ratings
 // @access  Public
 export const getRestaurantRatings = async (req: Request, res: Response): Promise<void> => {
   try {
-    // CRITICAL: Aggregate all ratings for this restaurant only
-    const stats = await Review.aggregate([
-      {
-        $match: {
-          restaurantId: new mongoose.Types.ObjectId(req.restaurantId!.toString()),
-          isVisible: true,
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: '$rating' },
-          totalReviews: { $sum: 1 },
-          ratingDistribution: {
-            $push: '$rating',
-          },
-        },
-      },
-    ]);
+    const restaurantIdStr = req.restaurantId!.toString();
 
-    if (!stats.length) {
+    // Try cache first (5-minute TTL)
+    const cacheKey = CacheKeys.reviewRatings(restaurantIdStr);
+    const cached = await cacheService.get<any>(cacheKey);
+
+    if (cached) {
       res.status(200).json({
         success: true,
-        data: {
-          averageRating: 0,
-          totalReviews: 0,
-          ratingDistribution: {
-            1: 0,
-            2: 0,
-            3: 0,
-            4: 0,
-            5: 0,
-          },
-        },
+        data: cached,
+        cached: true,
       });
       return;
     }
 
-    // Calculate rating distribution
+    // Optimized aggregation with facet
+    const stats = await Review.aggregate([
+      {
+        $match: {
+          restaurantId: new mongoose.Types.ObjectId(restaurantIdStr),
+          isVisible: true,
+        },
+      },
+      {
+        $facet: {
+          summary: [
+            {
+              $group: {
+                _id: null,
+                averageRating: { $avg: '$rating' },
+                totalReviews: { $sum: 1 },
+              },
+            },
+          ],
+          distribution: [
+            {
+              $group: {
+                _id: '$rating',
+                count: { $sum: 1 },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    if (!stats[0].summary.length) {
+      const emptyResult = {
+        averageRating: 0,
+        totalReviews: 0,
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      };
+
+      cacheService.set(cacheKey, emptyResult, 300000);
+
+      res.status(200).json({
+        success: true,
+        data: emptyResult,
+      });
+      return;
+    }
+
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    stats[0].ratingDistribution.forEach((rating: number) => {
-      distribution[rating as keyof typeof distribution]++;
+    stats[0].distribution.forEach((item: any) => {
+      distribution[item._id as keyof typeof distribution] = item.count;
     });
+
+    const result = {
+      averageRating: Math.round(stats[0].summary[0].averageRating * 10) / 10,
+      totalReviews: stats[0].summary[0].totalReviews,
+      ratingDistribution: distribution,
+    };
+
+    // Cache for 5 minutes
+    cacheService.set(cacheKey, result, 300000);
 
     res.status(200).json({
       success: true,
-      data: {
-        averageRating: Math.round(stats[0].averageRating * 10) / 10,
-        totalReviews: stats[0].totalReviews,
-        ratingDistribution: distribution,
-      },
+      data: result,
     });
   } catch (error: any) {
     console.error('Get restaurant ratings error:', error);
@@ -607,7 +722,6 @@ export const addRestaurantResponse = async (req: Request, res: Response): Promis
       return;
     }
 
-    // CRITICAL: Find review with restaurantId validation
     const review = await Review.findOne({
       _id: req.params.id,
       restaurantId: req.restaurantId,
@@ -621,7 +735,6 @@ export const addRestaurantResponse = async (req: Request, res: Response): Promis
       return;
     }
 
-    // Add or update response
     review.response = {
       text,
       respondedAt: new Date(),
@@ -629,6 +742,10 @@ export const addRestaurantResponse = async (req: Request, res: Response): Promis
     };
 
     await review.save();
+
+    // Invalidate cache
+    const restaurantIdStr = req.restaurantId!.toString();
+    cacheService.deletePattern(CacheKeys.reviewPattern(restaurantIdStr));
 
     const populatedReview = await Review.findById(review._id)
       .populate('menuItemId', 'name image')
@@ -658,7 +775,6 @@ export const toggleReviewVisibility = async (req: Request, res: Response): Promi
   try {
     const { isVisible } = req.body;
 
-    // CRITICAL: Find review with restaurantId validation
     const review = await Review.findOne({
       _id: req.params.id,
       restaurantId: req.restaurantId,
@@ -675,15 +791,17 @@ export const toggleReviewVisibility = async (req: Request, res: Response): Promi
     review.isVisible = isVisible;
     await review.save();
 
-    // Update menu item rating cache if this is a menu item review
-    // (visibility change affects rating calculations)
+    // Invalidate cache
+    const restaurantIdStr = req.restaurantId!.toString();
     if (review.menuItemId) {
-      try {
-        await updateMenuItemRating(review.menuItemId);
-      } catch (error) {
-        console.error('Error updating menu item rating:', error);
-        // Don't fail the request if rating update fails
-      }
+      cacheService.deletePattern(
+        CacheKeys.reviewItemPattern(restaurantIdStr, review.menuItemId.toString())
+      );
+      updateMenuItemRating(review.menuItemId).catch((error) =>
+        console.error('Error updating menu item rating:', error)
+      );
+    } else {
+      cacheService.deletePattern(CacheKeys.reviewPattern(restaurantIdStr));
     }
 
     res.status(200).json({

@@ -323,10 +323,31 @@ const restaurantSchema = new Schema<IRestaurant>({
   timestamps: true,
 });
 
-// Indexes for performance
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
 // Note: subdomain, slug, and email already have unique indexes from field definitions
+
+// OPTIMIZATION 3.1: Subdomain lookup (CRITICAL - most common query)
+restaurantSchema.index({ subdomain: 1, isActive: 1 }); // Compound for fast active subdomain lookup
+
+// OPTIMIZATION 3.2: Status filtering
 restaurantSchema.index({ isActive: 1, 'subscription.status': 1 });
+
+// OPTIMIZATION 3.3: Time-based queries
 restaurantSchema.index({ createdAt: -1 });
+restaurantSchema.index({ lastLoginAt: -1 }); // For recent activity tracking
+
+// OPTIMIZATION 3.4: Super admin queries
+restaurantSchema.index({ createdBy: 1 }); // For filtering by creator
+restaurantSchema.index({ 'subscription.plan': 1 }); // For plan-based queries
+restaurantSchema.index({ 'subscription.endDate': 1 }); // For expiration checks
+restaurantSchema.index({ isActive: 1, createdAt: -1 }); // Compound for active restaurant listings with sorting
+
+// Additional single field indexes for common lookups
+restaurantSchema.index({ subdomain: 1 });
+restaurantSchema.index({ slug: 1 });
+restaurantSchema.index({ email: 1 });
+restaurantSchema.index({ isActive: 1 });
+restaurantSchema.index({ 'subscription.status': 1 });
 
 // Pre-save hook to auto-generate slug from subdomain if not provided
 restaurantSchema.pre('save', function(next) {

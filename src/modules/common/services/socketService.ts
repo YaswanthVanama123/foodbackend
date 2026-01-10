@@ -260,6 +260,97 @@ export class SocketService {
   }
 
   /**
+   * Emit table created event to admins (tenant-scoped)
+   */
+  public emitTableCreated(restaurantId: string, tableData: any) {
+    const namespace = this.getRestaurantNamespace(restaurantId);
+
+    namespace.to('admin-room').emit('table-created', {
+      table: tableData,
+      timestamp: new Date(),
+    });
+
+    console.log(`📢 Emitted table-created to restaurant ${restaurantId}:`, tableData.tableNumber);
+  }
+
+  /**
+   * Emit table updated event to admins and customers (tenant-scoped)
+   */
+  public emitTableUpdated(restaurantId: string, tableData: any) {
+    const namespace = this.getRestaurantNamespace(restaurantId);
+
+    // Emit to admin room
+    namespace.to('admin-room').emit('table-updated', {
+      table: tableData,
+      timestamp: new Date(),
+    });
+
+    // Also emit to the specific table room (for customers at that table)
+    const tableRoom = `table-${tableData.tableNumber}`;
+    namespace.to(tableRoom).emit('table-status-changed', {
+      tableNumber: tableData.tableNumber,
+      isActive: tableData.isActive,
+      isOccupied: tableData.isOccupied,
+      timestamp: new Date(),
+    });
+
+    console.log(`📢 Emitted table-updated to restaurant ${restaurantId}:`, tableData.tableNumber);
+  }
+
+  /**
+   * Emit table deleted event to admins (tenant-scoped)
+   */
+  public emitTableDeleted(restaurantId: string, tableData: any) {
+    const namespace = this.getRestaurantNamespace(restaurantId);
+
+    namespace.to('admin-room').emit('table-deleted', {
+      tableId: tableData._id,
+      tableNumber: tableData.tableNumber,
+      timestamp: new Date(),
+    });
+
+    console.log(`📢 Emitted table-deleted to restaurant ${restaurantId}:`, tableData.tableNumber);
+  }
+
+  /**
+   * Emit bulk table update event to admins (tenant-scoped)
+   */
+  public emitTableBulkUpdated(restaurantId: string, data: any) {
+    const namespace = this.getRestaurantNamespace(restaurantId);
+
+    namespace.to('admin-room').emit('tables-bulk-updated', {
+      tableIds: data.tableIds,
+      updates: data.updates,
+      modifiedCount: data.modifiedCount,
+      timestamp: new Date(),
+    });
+
+    console.log(`📢 Emitted tables-bulk-updated to restaurant ${restaurantId}: ${data.modifiedCount} tables`);
+  }
+
+  /**
+   * Emit table status change to specific table room (tenant-scoped)
+   * Used for real-time status updates to customers
+   */
+  public emitTableStatusToCustomers(
+    restaurantId: string,
+    tableNumber: string,
+    statusData: any
+  ) {
+    const namespace = this.getRestaurantNamespace(restaurantId);
+    const tableRoom = `table-${tableNumber}`;
+
+    namespace.to(tableRoom).emit('table-status-changed', {
+      tableNumber,
+      isOccupied: statusData.isOccupied,
+      isActive: statusData.isActive,
+      timestamp: new Date(),
+    });
+
+    console.log(`📢 Emitted table-status to customers at table ${tableNumber} in restaurant ${restaurantId}`);
+  }
+
+  /**
    * Get statistics for all namespaces (for monitoring)
    */
   public getStats() {

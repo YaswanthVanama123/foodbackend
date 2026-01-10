@@ -1,34 +1,30 @@
 import { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import Customer from '../../common/models/Customer';
 import Order from '../../common/models/Order';
-import { jwtConfig } from '../../common/config/jwt';
+import { RedisCache, CacheKeys } from '../../common/config/redis';
+import {
+  generateTokenPair,
+  rotateRefreshToken,
+  revokeAllRefreshTokens,
+} from '../../common/utils/tokenUtils';
+import { invalidateCustomerSession } from '../../common/middleware/customerAuth';
 
 /**
- * Generate JWT token for customer
- */
-const generateCustomerToken = (customerId: string, restaurantId: string): string => {
-  return jwt.sign(
-    {
-      id: customerId,
-      restaurantId,
-      type: 'customer',
-    },
-    jwtConfig.secret,
-    { expiresIn: jwtConfig.accessTokenExpire } as any
-  );
-};
-
-/**
- * @desc    Simple Customer Registration (username only, tenant-scoped)
+ * @desc    Simple Customer Registration (username only, tenant-scoped) - OPTIMIZED
  * @route   POST /api/customers/auth/register
  * @access  Public (requires tenant context)
+ *
+ * OPTIMIZATIONS:
+ * - Uses .lean() for faster customer check
+ * - Generates refresh token for session management
+ * - Caches session data in Redis
+ * - Early validation for faster failures
  */
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.body;
 
-    // Validation
+    // Early validation for faster failures
     if (!username || !username.trim()) {
       res.status(400).json({
         success: false,
@@ -54,11 +50,14 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if username already exists in this restaurant
+    // OPTIMIZATION: Use .lean() for faster query
     const existingCustomer = await Customer.findOne({
       username: username.trim().toLowerCase(),
       restaurantId: req.restaurantId,
-    });
+    })
+      .select('_id')
+      .lean()
+      .exec();
 
     if (existingCustomer) {
       res.status(400).json({
@@ -74,8 +73,32 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       restaurantId: req.restaurantId,
     });
 
-    // Generate JWT token
-    const token = generateCustomerToken(customer._id.toString(), customer.restaurantId.toString());
+    // OPTIMIZATION: Generate token pair with refresh token
+    const tokens = await generateTokenPair(
+      customer._id.toString(),
+      customer.restaurantId.toString()
+    );
+
+    // OPTIMIZATION: Cache customer session in Redis
+    const cacheKey = CacheKeys.jwtSession(
+      customer._id.toString(),
+      customer.restaurantId.toString()
+    );
+    await RedisCache.set(
+      cacheKey,
+      {
+        customer: {
+          _id: customer._id,
+          username: customer.username,
+          restaurantId: customer.restaurantId,
+          isActive: customer.isActive,
+          createdAt: customer.createdAt,
+          updatedAt: customer.updatedAt,
+        },
+        cachedAt: Date.now(),
+      },
+      300 // 5 minutes
+    );
 
     res.status(201).json({
       success: true,
@@ -87,7 +110,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
           restaurantId: customer.restaurantId,
           createdAt: customer.createdAt,
         },
-        token,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
       },
     });
   } catch (error: any) {
@@ -101,15 +126,22 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 };
 
 /**
- * @desc    Simple Customer Login (username only, tenant-scoped)
+ * @desc    Simple Customer Login (username only, tenant-scoped) - OPTIMIZED
  * @route   POST /api/customers/auth/login
  * @access  Public (requires tenant context)
+ *
+ * OPTIMIZATIONS:
+ * - Uses .lean() and select() for minimal data transfer
+ * - Generates refresh token for session management
+ * - Caches session in Redis (5 min TTL)
+ * - Early validation for faster failures
+ * - Rate limiting applied via middleware
  */
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.body;
 
-    // Validation
+    // Early validation
     if (!username || !username.trim()) {
       res.status(400).json({
         success: false,
@@ -127,11 +159,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find customer by username and restaurant
+    // OPTIMIZATION: Use .lean() and select only needed fields
     const customer = await Customer.findOne({
       username: username.trim().toLowerCase(),
       restaurantId: req.restaurantId,
-    });
+    })
+      .select('_id username restaurantId isActive createdAt updatedAt')
+      .lean()
+      .exec();
 
     if (!customer) {
       res.status(401).json({
@@ -150,8 +185,25 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Generate JWT token
-    const token = generateCustomerToken(customer._id.toString(), customer.restaurantId.toString());
+    // OPTIMIZATION: Generate token pair with refresh token
+    const tokens = await generateTokenPair(
+      customer._id.toString(),
+      customer.restaurantId.toString()
+    );
+
+    // OPTIMIZATION: Cache customer session in Redis
+    const cacheKey = CacheKeys.jwtSession(
+      customer._id.toString(),
+      customer.restaurantId.toString()
+    );
+    await RedisCache.set(
+      cacheKey,
+      {
+        customer,
+        cachedAt: Date.now(),
+      },
+      300 // 5 minutes
+    );
 
     res.status(200).json({
       success: true,
@@ -163,7 +215,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
           restaurantId: customer.restaurantId,
           createdAt: customer.createdAt,
         },
-        token,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
       },
     });
   } catch (error: any) {
@@ -177,9 +231,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 };
 
 /**
- * @desc    Get customer's active order (tenant-scoped)
+ * @desc    Get customer's active order (tenant-scoped) - OPTIMIZED
  * @route   GET /api/customers/auth/active-order
  * @access  Private (requires customerAuth)
+ *
+ * OPTIMIZATIONS:
+ * - Uses .lean() for faster query
+ * - Explicit field selection for populated documents
  */
 export const getActiveOrder = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -192,7 +250,7 @@ export const getActiveOrder = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Find customer's most recent non-cancelled, non-served order
+    // OPTIMIZATION: Use .lean() and limit fields
     const activeOrder = await Order.findOne({
       restaurantId: req.restaurantId,
       customerId: req.customer._id,
@@ -221,6 +279,91 @@ export const getActiveOrder = async (req: Request, res: Response): Promise<void>
     res.status(500).json({
       success: false,
       message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Refresh access token using refresh token
+ * @route   POST /api/customers/auth/refresh
+ * @access  Public
+ */
+export const refreshToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { refreshToken: token } = req.body;
+
+    if (!token) {
+      res.status(400).json({
+        success: false,
+        message: 'Refresh token is required',
+      });
+      return;
+    }
+
+    // Rotate refresh token (invalidate old, generate new)
+    const newTokens = await rotateRefreshToken(token);
+
+    if (!newTokens) {
+      res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token',
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Token refreshed successfully',
+      data: {
+        accessToken: newTokens.accessToken,
+        refreshToken: newTokens.refreshToken,
+        expiresIn: newTokens.expiresIn,
+      },
+    });
+  } catch (error: any) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during token refresh',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Logout customer (revoke all tokens)
+ * @route   POST /api/customers/auth/logout
+ * @access  Private
+ */
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.customer) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    const customerId = req.customer._id.toString();
+    const restaurantId = req.customer.restaurantId.toString();
+
+    // Revoke all refresh tokens
+    await revokeAllRefreshTokens(customerId);
+
+    // Invalidate session cache
+    await invalidateCustomerSession(customerId, restaurantId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Logout successful',
+    });
+  } catch (error: any) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during logout',
       error: error.message,
     });
   }

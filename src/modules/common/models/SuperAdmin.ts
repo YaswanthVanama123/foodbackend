@@ -11,6 +11,7 @@ export interface ISuperAdmin extends Document {
   lastName: string;
   permissions: string[];
   isActive: boolean;
+  fcmToken?: string; // Firebase Cloud Messaging device token (one per super admin)
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -86,6 +87,11 @@ const superAdminSchema = new Schema<ISuperAdmin>({
   isActive: {
     type: Boolean,
     default: true,
+  },
+  fcmToken: {
+    type: String,
+    required: false,
+    index: true, // Index for efficient FCM token lookups
   },
   lastLoginAt: {
     type: Date,

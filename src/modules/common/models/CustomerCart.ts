@@ -103,10 +103,15 @@ const customerCartSchema = new Schema<ICustomerCart>(
 // CRITICAL: Compound unique index - one cart per customer per restaurant
 customerCartSchema.index({ customerId: 1, restaurantId: 1 }, { unique: true });
 
-// Additional indexes for query performance
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
+// Index for querying carts by restaurant and last updated time
 customerCartSchema.index({ restaurantId: 1, updatedAt: -1 });
 
-// Automatically remove empty carts after 7 days of inactivity
+// Additional indexes for common queries
+customerCartSchema.index({ customerId: 1 });
+customerCartSchema.index({ restaurantId: 1 });
+
+// TTL index to automatically remove empty carts after 7 days of inactivity
 customerCartSchema.index(
   { updatedAt: 1 },
   {

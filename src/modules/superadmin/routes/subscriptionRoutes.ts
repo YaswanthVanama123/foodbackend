@@ -8,6 +8,7 @@ import {
   renewSubscription,
   getSubscriptionById,
   deleteSubscription,
+  getSubscriptionsPageData,
 } from '../controllers/subscriptionController';
 import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
@@ -42,6 +43,22 @@ router.get('/', superAdminAuth, getAllSubscriptions);
  * @param   {string} restaurantId - Restaurant ID
  */
 router.get('/restaurant/:restaurantId', superAdminAuth, getSubscriptionsByRestaurant);
+
+/**
+ * @route   GET /api/superadmin/subscriptions/page-data
+ * @desc    Get subscriptions page data (subscriptions + plans + restaurants) - OPTIMIZED (SINGLE REQUEST)
+ * @access  Private (Super Admin)
+ * @query   {number} page - Page number (default: 1)
+ * @query   {number} limit - Items per page (default: 20)
+ * @query   {string} status - Filter by status (active|cancelled|expired|pending)
+ * @query   {string} billingCycle - Filter by billing cycle (monthly|yearly)
+ * @query   {boolean} autoRenew - Filter by auto-renew status
+ * @query   {string} search - Search in restaurant name, subdomain, or email
+ * @query   {string} sortBy - Sort field (default: createdAt)
+ * @query   {string} sortOrder - Sort order (asc|desc, default: desc)
+ * @query   {boolean} expiringSoon - Filter expiring subscriptions (within 30 days)
+ */
+router.get('/page-data', superAdminAuth, getSubscriptionsPageData);
 
 /**
  * @route   GET /api/superadmin/subscriptions/:id

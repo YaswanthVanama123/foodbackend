@@ -152,6 +152,7 @@ const auditLogSchema = new Schema<IAuditLog>({
   collection: 'auditlogs',
 });
 
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
 // Compound indexes for common query patterns
 auditLogSchema.index({ timestamp: -1 }); // Most recent first
 auditLogSchema.index({ action: 1, timestamp: -1 });
@@ -163,9 +164,17 @@ auditLogSchema.index({ severity: 1, timestamp: -1 });
 auditLogSchema.index({ actorType: 1, actorId: 1, timestamp: -1 });
 auditLogSchema.index({ resourceType: 1, resourceId: 1, timestamp: -1 });
 
-// TTL index to automatically delete logs older than 1 year (configurable)
-// To disable automatic deletion, comment out this index
-// auditLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 31536000 }); // 365 days
+// Additional single field indexes
+auditLogSchema.index({ action: 1 });
+auditLogSchema.index({ actorType: 1 });
+auditLogSchema.index({ actorId: 1 });
+auditLogSchema.index({ resourceType: 1 });
+auditLogSchema.index({ resourceId: 1 });
+auditLogSchema.index({ severity: 1 });
+
+// TTL index to automatically delete logs older than 1 year (365 days)
+// IMPORTANT: This is a TTL index that will delete old audit logs automatically
+auditLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 31536000 }); // 365 days
 
 // Virtual for human-readable action
 auditLogSchema.virtual('actionDescription').get(function() {

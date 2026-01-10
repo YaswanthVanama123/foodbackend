@@ -13,6 +13,7 @@ import {
   getRestaurantAdmins,
   getGlobalAnalytics,
   getAllAdmins,
+  getAdminsPageData,
   getAdminById,
   updateAdmin,
   deleteAdmin,
@@ -80,6 +81,9 @@ router.get('/analytics/global', superAdminAuth, getGlobalAnalytics);
  * Admin Management Routes (Global)
  * Manage all restaurant admins across platform
  */
+
+// Get admins page data (admins + restaurants) - OPTIMIZED
+router.get('/admins/page-data', superAdminAuth, getAdminsPageData);
 
 // Get all admins across all restaurants
 router.get('/admins', superAdminAuth, getAllAdmins);

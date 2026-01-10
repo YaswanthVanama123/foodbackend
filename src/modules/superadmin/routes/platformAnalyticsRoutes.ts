@@ -4,6 +4,8 @@ import {
   getRestaurantGrowth,
   getTopRestaurants,
   getPlatformStats,
+  getDashboardPageData,
+  getAnalyticsPageData,
 } from '../controllers/platformAnalyticsController';
 import { superAdminAuth } from '../../common/middleware/authMiddleware';
 
@@ -13,6 +15,15 @@ const router = Router();
  * Platform Analytics Routes
  * All routes require super admin authentication
  */
+
+// GET /api/superadmin/analytics/dashboard/page-data
+// OPTIMIZED: Returns stats + recent activity in single request
+router.get('/dashboard/page-data', superAdminAuth, getDashboardPageData);
+
+// GET /api/superadmin/analytics/page-data
+// OPTIMIZED: Returns revenue + growth + top restaurants + stats in single request
+// Query params: startDate (optional), endDate (optional)
+router.get('/page-data', superAdminAuth, getAnalyticsPageData);
 
 // GET /api/superadmin/analytics/revenue
 // Query params: startDate (optional), endDate (optional)

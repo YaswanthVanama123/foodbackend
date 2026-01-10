@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
 import Plan from '../../common/models/Plan';
+import cacheService, { CacheKeys } from '../../common/services/cacheService';
+
+// Cache TTL constants (in milliseconds)
+const PLAN_CACHE_TTL = 3600000; // 1 hour - plans rarely change
 
 // @desc    Get all plans (active and inactive)
 // @route   GET /api/superadmin/plans
@@ -29,6 +33,16 @@ export const getAllPlans = async (req: Request, res: Response): Promise<void> =>
       filter.isActive = isActive === 'true';
     }
 
+    // Create cache key from filters
+    const cacheKey = CacheKeys.planList({ page, limit, search, isActive, sortBy, sortOrder });
+
+    // Try to get from cache
+    const cachedData = cacheService.get<any>(cacheKey);
+    if (cachedData) {
+      res.status(200).json(cachedData);
+      return;
+    }
+
     // Pagination
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
@@ -38,17 +52,18 @@ export const getAllPlans = async (req: Request, res: Response): Promise<void> =>
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Query
+    // Query with .lean() for performance
     const [plans, total] = await Promise.all([
       Plan.find(filter)
         .sort(sort)
         .skip(skip)
         .limit(limitNum)
-        .lean(),
-      Plan.countDocuments(filter),
+        .lean()
+        .exec(),
+      Plan.countDocuments(filter).exec(),
     ]);
 
-    res.status(200).json({
+    const response = {
       success: true,
       data: {
         plans,
@@ -59,7 +74,12 @@ export const getAllPlans = async (req: Request, res: Response): Promise<void> =>
           pages: Math.ceil(total / limitNum),
         },
       },
-    });
+    };
+
+    // Cache the response
+    cacheService.set(cacheKey, response, PLAN_CACHE_TTL);
+
+    res.status(200).json(response);
   } catch (error: any) {
     console.error('Get all plans error:', error);
     res.status(500).json({
@@ -76,8 +96,17 @@ export const getAllPlans = async (req: Request, res: Response): Promise<void> =>
 export const getPlanById = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const cacheKey = CacheKeys.planById(id);
 
-    const plan = await Plan.findById(id).lean();
+    // Try to get from cache
+    const cachedPlan = cacheService.get<any>(cacheKey);
+    if (cachedPlan) {
+      res.status(200).json(cachedPlan);
+      return;
+    }
+
+    // Query with .lean() for performance
+    const plan = await Plan.findById(id).lean().exec();
 
     if (!plan) {
       res.status(404).json({
@@ -87,10 +116,15 @@ export const getPlanById = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    res.status(200).json({
+    const response = {
       success: true,
       data: plan,
-    });
+    };
+
+    // Cache the response
+    cacheService.set(cacheKey, response, PLAN_CACHE_TTL);
+
+    res.status(200).json(response);
   } catch (error: any) {
     console.error('Get plan by ID error:', error);
     res.status(500).json({
@@ -127,8 +161,8 @@ export const createPlan = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // Check if plan with same name already exists
-    const existingPlan = await Plan.findOne({ name });
+    // Check if plan with same name already exists (use .lean() for performance)
+    const existingPlan = await Plan.findOne({ name }).lean().exec();
 
     if (existingPlan) {
       res.status(400).json({
@@ -174,6 +208,9 @@ export const createPlan = async (req: Request, res: Response): Promise<void> => 
       displayOrder: displayOrder !== undefined ? displayOrder : 0,
     });
 
+    // Invalidate all plan caches
+    cacheService.deletePattern(CacheKeys.planPattern());
+
     res.status(201).json({
       success: true,
       data: plan,
@@ -197,8 +234,8 @@ export const updatePlan = async (req: Request, res: Response): Promise<void> => 
     const { id } = req.params;
     const updateData = req.body;
 
-    // Check if plan exists
-    const existingPlan = await Plan.findById(id);
+    // Check if plan exists (use .lean() for performance)
+    const existingPlan = await Plan.findById(id).lean().exec();
 
     if (!existingPlan) {
       res.status(404).json({
@@ -210,7 +247,7 @@ export const updatePlan = async (req: Request, res: Response): Promise<void> => 
 
     // If name is being changed, check if new name already exists
     if (updateData.name && updateData.name !== existingPlan.name) {
-      const duplicatePlan = await Plan.findOne({ name: updateData.name, _id: { $ne: id } });
+      const duplicatePlan = await Plan.findOne({ name: updateData.name, _id: { $ne: id } }).lean().exec();
 
       if (duplicatePlan) {
         res.status(400).json({
@@ -235,7 +272,10 @@ export const updatePlan = async (req: Request, res: Response): Promise<void> => 
       id,
       { $set: updateData },
       { new: true, runValidators: true }
-    );
+    ).exec();
+
+    // Invalidate all plan caches
+    cacheService.deletePattern(CacheKeys.planPattern());
 
     res.status(200).json({
       success: true,
@@ -259,7 +299,7 @@ export const deletePlan = async (req: Request, res: Response): Promise<void> => 
   try {
     const { id } = req.params;
 
-    const plan = await Plan.findById(id);
+    const plan = await Plan.findById(id).exec();
 
     if (!plan) {
       res.status(404).json({
@@ -271,6 +311,9 @@ export const deletePlan = async (req: Request, res: Response): Promise<void> => 
 
     // Delete plan
     await plan.deleteOne();
+
+    // Invalidate all plan caches
+    cacheService.deletePattern(CacheKeys.planPattern());
 
     res.status(200).json({
       success: true,
@@ -306,7 +349,7 @@ export const togglePlanStatus = async (req: Request, res: Response): Promise<voi
       id,
       { isActive },
       { new: true }
-    );
+    ).exec();
 
     if (!plan) {
       res.status(404).json({
@@ -315,6 +358,9 @@ export const togglePlanStatus = async (req: Request, res: Response): Promise<voi
       });
       return;
     }
+
+    // Invalidate all plan caches
+    cacheService.deletePattern(CacheKeys.planPattern());
 
     res.status(200).json({
       success: true,

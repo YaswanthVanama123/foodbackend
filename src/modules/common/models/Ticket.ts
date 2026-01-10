@@ -155,12 +155,27 @@ const ticketSchema = new Schema<ITicket>({
   timestamps: true,
 });
 
-// Indexes for performance
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
 // Note: ticketNumber already has a unique index from field definition
+// Compound index for restaurant tickets filtered by status
 ticketSchema.index({ restaurantId: 1, status: 1 });
+
+// Compound index for assigned tickets filtered by status
 ticketSchema.index({ assignedTo: 1, status: 1 });
+
+// Compound index for ticket prioritization and sorting
 ticketSchema.index({ status: 1, priority: -1, createdAt: -1 });
+
+// Compound index for category-based filtering
 ticketSchema.index({ category: 1, status: 1 });
+
+// Additional indexes for common queries
+ticketSchema.index({ restaurantId: 1 });
+ticketSchema.index({ assignedTo: 1 });
+ticketSchema.index({ category: 1 });
+ticketSchema.index({ priority: 1 });
+ticketSchema.index({ status: 1 });
+ticketSchema.index({ ticketNumber: 1 });
 ticketSchema.index({ createdAt: -1 });
 ticketSchema.index({ tags: 1 });
 

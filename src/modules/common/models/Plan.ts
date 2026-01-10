@@ -114,11 +114,17 @@ const planSchema = new Schema<IPlan>({
   timestamps: true,
 });
 
-// Indexes for performance
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
 // Note: name already has a unique index from field definition
+// Compound index for active plans query (most common use case)
+planSchema.index({ isActive: 1, displayOrder: 1 });
+
+// Additional indexes for common queries
 planSchema.index({ isActive: 1 });
 planSchema.index({ displayOrder: 1 });
 planSchema.index({ price: 1 });
+planSchema.index({ name: 1 });
+planSchema.index({ billingCycle: 1 });
 
 // Method to check if plan is free
 planSchema.methods.isFree = function(): boolean {

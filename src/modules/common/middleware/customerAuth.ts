@@ -2,22 +2,45 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import Customer from '../models/Customer';
 import { jwtConfig } from '../config/jwt';
+import { RedisCache, CacheKeys } from '../config/redis';
 
 // JWT Payload structure for customer tokens
 interface CustomerJwtPayload {
   id: string;
   restaurantId: string;
   type: 'customer';
+  iat?: number;
+  exp?: number;
+}
+
+// Cached session data
+interface CachedSession {
+  customer: {
+    _id: string;
+    username: string;
+    restaurantId: string;
+    isActive: boolean;
+    fcmToken?: string;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  cachedAt: number;
 }
 
 /**
- * Customer Authentication Middleware
+ * Customer Authentication Middleware (OPTIMIZED)
  *
  * Validates JWT token and ensures:
  * 1. Token is valid and not expired
  * 2. Token type is 'customer'
  * 3. Customer belongs to current restaurant (tenant validation)
  * 4. Customer account is active
+ *
+ * OPTIMIZATIONS:
+ * - Redis caching to avoid DB lookups (cached for 5 minutes)
+ * - .lean() queries for faster JSON conversion
+ * - Explicit field selection to minimize data transfer
+ * - Short-circuit validation for faster failures
  *
  * Attaches customer object and restaurantId to request
  */
@@ -74,11 +97,31 @@ export const customerAuth = async (
       return;
     }
 
-    // Get customer from database (with restaurant validation)
+    // OPTIMIZATION: Try to get customer from Redis cache first
+    const cacheKey = CacheKeys.jwtSession(decoded.id, decoded.restaurantId);
+    const cachedSession = await RedisCache.get<CachedSession>(cacheKey);
+
+    if (cachedSession) {
+      // Verify cached data is still valid
+      if (cachedSession.customer.isActive) {
+        // Convert cached data to match Customer document structure
+        req.customer = cachedSession.customer as any;
+        return next();
+      } else {
+        // Customer became inactive, remove from cache
+        await RedisCache.del(cacheKey);
+      }
+    }
+
+    // Cache miss or invalid - fetch from database
+    // OPTIMIZATION: Use .lean() for faster query, select only needed fields
     const customer = await Customer.findOne({
       _id: decoded.id,
       restaurantId: req.restaurantId,
-    }).select('-password');
+    })
+      .select('_id username restaurantId isActive fcmToken createdAt updatedAt')
+      .lean()
+      .exec();
 
     if (!customer) {
       res.status(401).json({
@@ -99,8 +142,15 @@ export const customerAuth = async (
       return;
     }
 
+    // OPTIMIZATION: Cache session in Redis (5 minutes TTL)
+    const sessionData: CachedSession = {
+      customer: customer as any,
+      cachedAt: Date.now(),
+    };
+    await RedisCache.set(cacheKey, sessionData, 300); // 5 minutes
+
     // Attach customer to request
-    req.customer = customer;
+    req.customer = customer as any;
     next();
   } catch (error: any) {
     // Handle JWT errors
@@ -132,13 +182,29 @@ export const customerAuth = async (
 };
 
 /**
- * Optional Customer Authentication Middleware
+ * Invalidate customer session cache
+ * Call this when customer data changes (logout, profile update, etc.)
+ */
+export const invalidateCustomerSession = async (
+  customerId: string,
+  restaurantId: string
+): Promise<void> => {
+  const cacheKey = CacheKeys.jwtSession(customerId, restaurantId);
+  await RedisCache.del(cacheKey);
+};
+
+/**
+ * Optional Customer Authentication Middleware (OPTIMIZED)
  *
  * Similar to customerAuth but doesn't fail if no token is provided.
  * Useful for endpoints that work for both authenticated and guest customers.
  *
  * If token is provided and valid, attaches customer to request.
  * If no token or invalid token, continues without customer.
+ *
+ * OPTIMIZATIONS:
+ * - Redis caching for authenticated sessions
+ * - .lean() queries for faster JSON conversion
  */
 export const optionalCustomerAuth = async (
   req: Request,
@@ -168,15 +234,34 @@ export const optionalCustomerAuth = async (
       return next();
     }
 
-    // Get customer from database
+    // OPTIMIZATION: Try Redis cache first
+    const cacheKey = CacheKeys.jwtSession(decoded.id, decoded.restaurantId);
+    const cachedSession = await RedisCache.get<CachedSession>(cacheKey);
+
+    if (cachedSession && cachedSession.customer.isActive) {
+      req.customer = cachedSession.customer as any;
+      return next();
+    }
+
+    // Get customer from database with optimizations
     const customer = await Customer.findOne({
       _id: decoded.id,
       restaurantId: req.restaurantId,
-    }).select('-password');
+    })
+      .select('_id username restaurantId isActive fcmToken createdAt updatedAt')
+      .lean()
+      .exec();
 
-    // If customer found and active, attach to request
+    // If customer found and active, attach to request and cache
     if (customer && customer.isActive) {
-      req.customer = customer;
+      req.customer = customer as any;
+
+      // Cache the session
+      const sessionData: CachedSession = {
+        customer: customer as any,
+        cachedAt: Date.now(),
+      };
+      await RedisCache.set(cacheKey, sessionData, 300);
     }
 
     next();

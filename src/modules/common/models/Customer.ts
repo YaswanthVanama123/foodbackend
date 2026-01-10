@@ -12,6 +12,7 @@ export interface ICustomer extends Document {
   username: string;
   restaurantId: Types.ObjectId;
   isActive: boolean;
+  fcmToken?: string; // Firebase Cloud Messaging device token (one per customer)
   createdAt: Date;
   updatedAt: Date;
   preferences: ICustomerPreferences;
@@ -60,6 +61,11 @@ const customerSchema = new Schema<ICustomer>(
       type: Boolean,
       default: true,
     },
+    fcmToken: {
+      type: String,
+      required: false,
+      index: true, // Index for efficient FCM token lookups
+    },
     preferences: {
       type: preferencesSchema,
       default: () => ({
@@ -74,8 +80,8 @@ const customerSchema = new Schema<ICustomer>(
   }
 );
 
-// Compound index for unique username per restaurant
-// This ensures usernames are unique within each restaurant but can be reused across restaurants
+// CRITICAL: Compound unique index for multi-tenancy
+// Username is unique within each restaurant but can be reused across restaurants
 customerSchema.index(
   { restaurantId: 1, username: 1 },
   {
@@ -84,7 +90,11 @@ customerSchema.index(
   }
 );
 
-// Index for quick customer lookup
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
+// Index for FCM token lookups (for push notifications)
+customerSchema.index({ fcmToken: 1 });
+
+// Additional indexes for common queries
 customerSchema.index({ restaurantId: 1, isActive: 1 });
 
 export default mongoose.model<ICustomer>('Customer', customerSchema);

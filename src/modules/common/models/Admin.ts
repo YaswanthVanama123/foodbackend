@@ -9,6 +9,7 @@ export interface IAdmin extends Document {
   role: 'admin' | 'manager' | 'staff';
   permissions: string[];
   isActive: boolean;
+  fcmToken?: string; // Firebase Cloud Messaging device token (one per admin)
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -56,6 +57,11 @@ const adminSchema = new Schema<IAdmin>(
       type: Boolean,
       default: true,
     },
+    fcmToken: {
+      type: String,
+      required: false,
+      index: true, // Index for efficient FCM token lookups
+    },
   },
   {
     timestamps: true,
@@ -65,11 +71,25 @@ const adminSchema = new Schema<IAdmin>(
 // CRITICAL: Compound unique indexes for multi-tenancy
 // Username is unique within a restaurant, not globally
 adminSchema.index({ restaurantId: 1, username: 1 }, { unique: true });
+
 // Email is unique within a restaurant, not globally
 adminSchema.index({ restaurantId: 1, email: 1 }, { unique: true });
-// Additional indexes for query performance
+
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
+// Compound index for filtering admins by restaurant and active status
 adminSchema.index({ restaurantId: 1, isActive: 1 });
+
+// Compound index for filtering admins by restaurant and role
 adminSchema.index({ restaurantId: 1, role: 1 });
+
+// Additional indexes for common queries
+adminSchema.index({ restaurantId: 1 });
+adminSchema.index({ email: 1 });
+adminSchema.index({ username: 1 });
+adminSchema.index({ fcmToken: 1 });
+adminSchema.index({ isActive: 1 }); // For filtering active admins across restaurants
+adminSchema.index({ role: 1 });
+adminSchema.index({ createdAt: -1 }); // For sorting by creation date
 
 // Hash password before saving
 adminSchema.pre('save', async function (next) {

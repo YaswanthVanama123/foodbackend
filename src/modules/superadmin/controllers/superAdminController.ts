@@ -9,6 +9,8 @@ import Table from '../../common/models/Table';
 import Category from '../../common/models/Category';
 import { jwtConfig } from '../../common/config/jwt';
 import { getSocketService } from '../../common/services/socketService';
+import notificationService from '../../../services/notification.service';
+import { cacheManager } from '../../common/utils/cacheUtils';
 
 // Generate JWT token for super admin
 const generateSuperAdminToken = (superAdminId: string): string => {
@@ -40,8 +42,8 @@ export const superAdminRegister = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Check if super admin already exists
-    const existingByUsername = await SuperAdmin.findOne({ username });
+    // Check if super admin already exists (OPTIMIZED with lean())
+    const existingByUsername = await SuperAdmin.findOne({ username }).lean();
     if (existingByUsername) {
       res.status(400).json({
         success: false,
@@ -50,7 +52,7 @@ export const superAdminRegister = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const existingByEmail = await SuperAdmin.findOne({ email });
+    const existingByEmail = await SuperAdmin.findOne({ email }).lean();
     if (existingByEmail) {
       res.status(400).json({
         success: false,
@@ -109,7 +111,7 @@ export const superAdminLogin = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Find super admin
+    // Find super admin (OPTIMIZED: lean() not used here as we need password comparison method)
     const superAdmin = await SuperAdmin.findOne({ username }).select('+password');
 
     if (!superAdmin) {
@@ -222,10 +224,14 @@ export const getCurrentSuperAdmin = async (req: Request, res: Response): Promise
   }
 };
 
-// @desc    Get all restaurants with pagination and filters
+// @desc    Get all restaurants with pagination and filters - OPTIMIZED
 // @route   GET /api/super-admin/restaurants
 // @access  Private (Super Admin)
 export const getRestaurants = async (req: Request, res: Response): Promise<void> => {
+  const startTime = Date.now();
+  let cacheCheckTime = 0;
+  let dbQueryTime = 0;
+
   try {
     const {
       page = 1,
@@ -261,6 +267,32 @@ export const getRestaurants = async (req: Request, res: Response): Promise<void>
       filter['subscription.plan'] = plan;
     }
 
+    // Create cache key based on all parameters
+    const filterKey = `${page}:${limit}:${search || ''}:${status || ''}:${subscriptionStatus || ''}:${plan || ''}:${sortBy}:${sortOrder}`;
+    const cacheKey = `superadmin:restaurants:${filterKey}`;
+
+    // Try cache (2 minute TTL)
+    const cacheStart = Date.now();
+    const cached = await cacheManager.get<any>(cacheKey);
+    cacheCheckTime = Date.now() - cacheStart;
+
+    if (cached) {
+      console.log(`[SUPERADMIN RESTAURANTS] Cache HIT - took ${cacheCheckTime}ms`);
+      const totalTime = Date.now() - startTime;
+      res.status(200).json({
+        ...cached,
+        cached: true,
+        _perf: {
+          total: totalTime,
+          cache: cacheCheckTime,
+          db: 0,
+        },
+      });
+      return;
+    }
+
+    console.log(`[SUPERADMIN RESTAURANTS] Cache MISS - starting query`);
+
     // Pagination
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
@@ -270,46 +302,101 @@ export const getRestaurants = async (req: Request, res: Response): Promise<void>
     const sort: any = {};
     sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
 
-    // Query
-    const [restaurants, total] = await Promise.all([
-      Restaurant.find(filter)
-        .sort(sort)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Restaurant.countDocuments(filter),
+    const dbStart = Date.now();
+
+    // OPTIMIZATION: Use aggregation pipeline to get stats in single query
+    const results = await Restaurant.aggregate([
+      { $match: filter },
+      {
+        $facet: {
+          // Get paginated restaurants
+          restaurants: [
+            { $sort: sort },
+            { $skip: skip },
+            { $limit: limitNum },
+            {
+              $lookup: {
+                from: 'admins',
+                localField: '_id',
+                foreignField: 'restaurantId',
+                as: 'admins',
+              },
+            },
+            {
+              $lookup: {
+                from: 'orders',
+                localField: '_id',
+                foreignField: 'restaurantId',
+                as: 'orders',
+              },
+            },
+            {
+              $lookup: {
+                from: 'menuitems',
+                localField: '_id',
+                foreignField: 'restaurantId',
+                as: 'menuItems',
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                subdomain: 1,
+                email: 1,
+                phone: 1,
+                address: 1,
+                isActive: 1,
+                subscription: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                stats: {
+                  adminCount: { $size: '$admins' },
+                  orderCount: { $size: '$orders' },
+                  menuItemCount: { $size: '$menuItems' },
+                },
+              },
+            },
+          ],
+          // Get total count
+          totalCount: [{ $count: 'count' }],
+        },
+      },
     ]);
 
-    // Get stats for each restaurant
-    const restaurantsWithStats = await Promise.all(
-      restaurants.map(async (restaurant) => {
-        const [adminCount, orderCount, menuItemCount] = await Promise.all([
-          Admin.countDocuments({ restaurantId: restaurant._id }),
-          Order.countDocuments({ restaurantId: restaurant._id }),
-          MenuItem.countDocuments({ restaurantId: restaurant._id }),
-        ]);
+    dbQueryTime = Date.now() - dbStart;
 
-        return {
-          ...restaurant,
-          stats: {
-            adminCount,
-            orderCount,
-            menuItemCount,
-          },
-        };
-      })
-    );
+    const restaurants = results[0].restaurants || [];
+    const total = results[0].totalCount[0]?.count || 0;
 
-    res.status(200).json({
+    const responseData = {
       success: true,
       data: {
-        restaurants: restaurantsWithStats,
+        restaurants,
         pagination: {
           total,
           page: pageNum,
           limit: limitNum,
           pages: Math.ceil(total / limitNum),
         },
+      },
+    };
+
+    // Cache for 2 minutes
+    await cacheManager.set(cacheKey, responseData, 120000);
+
+    const totalTime = Date.now() - startTime;
+    console.log(
+      `[SUPERADMIN RESTAURANTS] ✅ TOTAL TIME: ${totalTime}ms (cache: ${cacheCheckTime}ms, db: ${dbQueryTime}ms)`
+    );
+
+    res.status(200).json({
+      ...responseData,
+      cached: false,
+      _perf: {
+        total: totalTime,
+        cache: cacheCheckTime,
+        db: dbQueryTime,
       },
     });
   } catch (error: any) {
@@ -425,6 +512,27 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
       onboardingStep: 0,
       createdBy: req.superAdmin!._id,
     });
+
+    // Send notification to all super admins about new restaurant
+    try {
+      const superAdmins = await SuperAdmin.find({ isActive: true, fcmToken: { $exists: true, $ne: null } }).select('fcmToken');
+      const superAdminTokens = superAdmins.map(sa => sa.fcmToken).filter(token => token) as string[];
+
+      if (superAdminTokens.length > 0) {
+        await notificationService.notifyNewRestaurant(
+          superAdminTokens,
+          restaurant.name,
+          restaurant._id.toString(),
+          restaurant.subdomain
+        );
+      }
+    } catch (notifError: any) {
+      console.error('Error sending new restaurant notification:', notifError);
+      // Don't fail the request if notification fails
+    }
+
+    // Invalidate restaurants cache
+    await cacheManager.deletePattern('superadmin:restaurants:.*');
 
     res.status(201).json({
       success: true,
@@ -554,6 +662,9 @@ export const updateRestaurant = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    // Invalidate restaurants cache
+    await cacheManager.deletePattern('superadmin:restaurants:.*');
+
     res.status(200).json({
       success: true,
       data: restaurant,
@@ -623,6 +734,9 @@ export const toggleRestaurantStatus = async (req: Request, res: Response): Promi
       return;
     }
 
+    // Invalidate restaurants cache
+    await cacheManager.deletePattern('superadmin:restaurants:.*');
+
     res.status(200).json({
       success: true,
       data: restaurant,
@@ -674,6 +788,9 @@ export const deleteRestaurant = async (req: Request, res: Response): Promise<voi
 
     // Delete restaurant
     await restaurant.deleteOne();
+
+    // Invalidate restaurants cache
+    await cacheManager.deletePattern('superadmin:restaurants:.*');
 
     res.status(200).json({
       success: true,
@@ -767,6 +884,28 @@ export const createRestaurantAdmin = async (req: Request, res: Response): Promis
     // Remove password from response
     const adminData = admin.toObject();
     const { password: _, ...adminWithoutPassword } = adminData;
+
+    // Invalidate admins cache
+    await cacheManager.deletePattern('superadmin:admins:.*');
+
+    // Send notification to all super admins about new admin user
+    try {
+      const superAdmins = await SuperAdmin.find({ isActive: true, fcmToken: { $exists: true, $ne: null } }).select('fcmToken');
+      const superAdminTokens = superAdmins.map(sa => sa.fcmToken).filter(token => token) as string[];
+
+      if (superAdminTokens.length > 0) {
+        await notificationService.notifyNewAdmin(
+          superAdminTokens,
+          admin.username,
+          admin.email,
+          restaurant.name,
+          restaurant._id.toString()
+        );
+      }
+    } catch (notifError: any) {
+      console.error('Error sending new admin notification:', notifError);
+      // Don't fail the request if notification fails
+    }
 
     res.status(201).json({
       success: true,
@@ -1004,6 +1143,97 @@ export const getAllAdmins = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+// @desc    Get admins page data (admins + restaurants) - OPTIMIZED
+// @route   GET /api/super-admin/admins/page-data
+// @access  Private (Super Admin)
+export const getAdminsPageData = async (req: Request, res: Response): Promise<void> => {
+  const startTime = Date.now();
+  let cacheCheckTime = 0;
+  let dbQueryTime = 0;
+
+  try {
+    const { limit = 1000 } = req.query;
+
+    // Create cache key
+    const cacheKey = `superadmin:admins:page-data:${limit}`;
+
+    // Try cache (2 minute TTL)
+    const cacheStart = Date.now();
+    const cached = await cacheManager.get<any>(cacheKey);
+    cacheCheckTime = Date.now() - cacheStart;
+
+    if (cached) {
+      console.log(`[SUPERADMIN ADMINS] Cache HIT - took ${cacheCheckTime}ms`);
+      const totalTime = Date.now() - startTime;
+      res.status(200).json({
+        ...cached,
+        cached: true,
+        _perf: {
+          total: totalTime,
+          cache: cacheCheckTime,
+          db: 0,
+        },
+      });
+      return;
+    }
+
+    console.log(`[SUPERADMIN ADMINS] Cache MISS - starting query`);
+
+    const dbStart = Date.now();
+    const limitNum = parseInt(limit as string, 10);
+
+    // Fetch admins and restaurants in parallel
+    const [admins, restaurants] = await Promise.all([
+      Admin.find({})
+        .select('-password')
+        .populate('restaurantId', 'name subdomain')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .lean(),
+      Restaurant.find({})
+        .select('_id name subdomain')
+        .sort({ name: 1 })
+        .limit(100)
+        .lean(),
+    ]);
+
+    dbQueryTime = Date.now() - dbStart;
+
+    const responseData = {
+      success: true,
+      data: {
+        admins,
+        restaurants,
+      },
+    };
+
+    // Cache for 2 minutes
+    await cacheManager.set(cacheKey, responseData, 120000);
+
+    const totalTime = Date.now() - startTime;
+    console.log(
+      `[SUPERADMIN ADMINS] ✅ TOTAL TIME: ${totalTime}ms (cache: ${cacheCheckTime}ms, db: ${dbQueryTime}ms)`
+    );
+
+    res.status(200).json({
+      ...responseData,
+      cached: false,
+      _perf: {
+        total: totalTime,
+        cache: cacheCheckTime,
+        db: dbQueryTime,
+      },
+    });
+  } catch (error: any) {
+    console.error('Get admins page data error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Get admin by ID
 // @route   GET /api/super-admin/admins/:id
 // @access  Private (Super Admin)
@@ -1070,6 +1300,9 @@ export const updateAdmin = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    // Invalidate admins cache
+    await cacheManager.deletePattern('superadmin:admins:.*');
+
     res.status(200).json({
       success: true,
       data: admin,
@@ -1103,6 +1336,9 @@ export const deleteAdmin = async (req: Request, res: Response): Promise<void> =>
     }
 
     await admin.deleteOne();
+
+    // Invalidate admins cache
+    await cacheManager.deletePattern('superadmin:admins:.*');
 
     res.status(200).json({
       success: true,
@@ -1147,6 +1383,9 @@ export const toggleAdminStatus = async (req: Request, res: Response): Promise<vo
       });
       return;
     }
+
+    // Invalidate admins cache
+    await cacheManager.deletePattern('superadmin:admins:.*');
 
     res.status(200).json({
       success: true,

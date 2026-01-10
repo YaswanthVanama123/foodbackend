@@ -56,8 +56,13 @@ const tableSchema = new Schema<ITable>(
 // CRITICAL: Compound unique index for multi-tenancy
 // Table number is unique within a restaurant, not globally
 tableSchema.index({ restaurantId: 1, tableNumber: 1 }, { unique: true });
-// Additional indexes for query performance
-tableSchema.index({ restaurantId: 1, isActive: 1 });
+
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
+// Compound index for filtering tables by restaurant and occupancy status
 tableSchema.index({ restaurantId: 1, isOccupied: 1 });
+
+// Additional indexes for common queries
+tableSchema.index({ restaurantId: 1, isActive: 1 });
+tableSchema.index({ currentOrderId: 1 });
 
 export default mongoose.model<ITable>('Table', tableSchema);

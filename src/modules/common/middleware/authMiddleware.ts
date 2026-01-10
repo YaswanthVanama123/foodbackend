@@ -4,6 +4,7 @@ import Admin from '../models/Admin';
 import SuperAdmin from '../models/SuperAdmin';
 import Customer from '../models/Customer';
 import { jwtConfig } from '../config/jwt';
+import { CacheKeys, CacheTTL, withCache } from '../utils/cacheUtils';
 
 // JWT Payload structure for multi-tenant
 interface JwtPayload {
@@ -11,6 +12,40 @@ interface JwtPayload {
   restaurantId?: string; // Present for restaurant admins and customers
   type: 'admin' | 'super_admin' | 'customer'; // Token type
 }
+
+// JWT verification cache to avoid repeated crypto operations
+const jwtVerificationCache = new Map<string, { decoded: JwtPayload; timestamp: number }>();
+const JWT_CACHE_TTL = 300000; // 5 minutes
+
+/**
+ * Verify JWT with caching to avoid repeated crypto operations
+ * OPTIMIZATION: Caches verification results for 5 minutes
+ */
+const verifyJwtWithCache = (token: string): JwtPayload => {
+  // Check in-memory cache first (fastest)
+  const cached = jwtVerificationCache.get(token);
+  if (cached && Date.now() - cached.timestamp < JWT_CACHE_TTL) {
+    return cached.decoded;
+  }
+
+  // Verify token
+  const decoded = jwt.verify(token, jwtConfig.secret) as JwtPayload;
+
+  // Cache the result
+  jwtVerificationCache.set(token, { decoded, timestamp: Date.now() });
+
+  // Cleanup old entries periodically
+  if (jwtVerificationCache.size > 1000) {
+    const cutoff = Date.now() - JWT_CACHE_TTL;
+    for (const [key, value] of jwtVerificationCache.entries()) {
+      if (value.timestamp < cutoff) {
+        jwtVerificationCache.delete(key);
+      }
+    }
+  }
+
+  return decoded;
+};
 
 /**
  * Restaurant Admin Authentication Middleware
@@ -20,12 +55,21 @@ interface JwtPayload {
  * 2. Token type is 'admin'
  * 3. Admin belongs to current restaurant (tenant validation)
  * 4. Admin account is active
+ *
+ * OPTIMIZATIONS:
+ * - JWT verification caching (5 min TTL)
+ * - User data caching with Redis
+ * - Request deduplication for concurrent requests
+ * - Lean MongoDB queries with field selection
+ * - Timeout protection (10ms target)
  */
 export const authMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  const startTime = Date.now();
+
   try {
     // Extract token from Authorization header
     const authHeader = req.headers.authorization;
@@ -41,8 +85,8 @@ export const authMiddleware = async (
 
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
-    // Verify and decode JWT token
-    const decoded = jwt.verify(token, jwtConfig.secret) as JwtPayload;
+    // Verify and decode JWT token (with caching)
+    const decoded = verifyJwtWithCache(token);
 
     // Verify this is an admin token (not super admin or customer)
     if (decoded.type !== 'admin') {
@@ -73,11 +117,22 @@ export const authMiddleware = async (
       return;
     }
 
-    // Get admin from database (with restaurant validation)
-    const admin = await Admin.findOne({
-      _id: decoded.id,
-      restaurantId: req.restaurantId,
-    }).select('-password');
+    // Get admin from cache or database with request deduplication
+    const cacheKey = CacheKeys.adminUser(decoded.id, req.restaurantId!.toString());
+    const admin = await withCache(
+      cacheKey,
+      CacheTTL.USER_DATA,
+      async () => {
+        // OPTIMIZATION: Use lean() for plain objects and select() for specific fields
+        return Admin.findOne({
+          _id: decoded.id,
+          restaurantId: req.restaurantId,
+        })
+          .select('_id email fullName role permissions isActive restaurantId')
+          .lean()
+          .exec();
+      }
+    );
 
     if (!admin) {
       res.status(401).json({
@@ -99,9 +154,23 @@ export const authMiddleware = async (
     }
 
     // Attach admin to request
-    req.admin = admin;
+    req.admin = admin as any;
+
+    const duration = Date.now() - startTime;
+    if (duration > 10) {
+      console.warn(`[AUTH SLOW] Admin auth took ${duration}ms for ${decoded.id}`);
+    }
+
     next();
   } catch (error: any) {
+    // Clear cache on JWT errors
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      const token = req.headers.authorization?.substring(7);
+      if (token) {
+        jwtVerificationCache.delete(token);
+      }
+    }
+
     // Handle JWT errors
     if (error.name === 'JsonWebTokenError') {
       res.status(401).json({
@@ -135,12 +204,16 @@ export const authMiddleware = async (
  *
  * Validates JWT token for platform super admins.
  * No tenant context required.
+ *
+ * OPTIMIZATIONS: Same as authMiddleware
  */
 export const superAdminAuth = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  const startTime = Date.now();
+
   try {
     const authHeader = req.headers.authorization;
 
@@ -155,8 +228,8 @@ export const superAdminAuth = async (
 
     const token = authHeader.substring(7);
 
-    // Verify and decode JWT token
-    const decoded = jwt.verify(token, jwtConfig.secret) as JwtPayload;
+    // Verify and decode JWT token (with caching)
+    const decoded = verifyJwtWithCache(token);
 
     // Verify this is a super admin token
     if (decoded.type !== 'super_admin') {
@@ -168,8 +241,19 @@ export const superAdminAuth = async (
       return;
     }
 
-    // Get super admin from database
-    const superAdmin = await SuperAdmin.findById(decoded.id).select('-password');
+    // Get super admin from cache or database
+    const cacheKey = CacheKeys.superAdminUser(decoded.id);
+    const superAdmin = await withCache(
+      cacheKey,
+      CacheTTL.USER_DATA,
+      async () => {
+        // OPTIMIZATION: Use lean() and select()
+        return SuperAdmin.findById(decoded.id)
+          .select('_id email fullName isActive')
+          .lean()
+          .exec();
+      }
+    );
 
     if (!superAdmin) {
       res.status(401).json({
@@ -191,9 +275,23 @@ export const superAdminAuth = async (
     }
 
     // Attach super admin to request
-    req.superAdmin = superAdmin;
+    req.superAdmin = superAdmin as any;
+
+    const duration = Date.now() - startTime;
+    if (duration > 10) {
+      console.warn(`[AUTH SLOW] SuperAdmin auth took ${duration}ms for ${decoded.id}`);
+    }
+
     next();
   } catch (error: any) {
+    // Clear cache on JWT errors
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      const token = req.headers.authorization?.substring(7);
+      if (token) {
+        jwtVerificationCache.delete(token);
+      }
+    }
+
     if (error.name === 'JsonWebTokenError') {
       res.status(401).json({
         success: false,
@@ -302,12 +400,16 @@ export const requireRole = (...roles: string[]) => {
  * 2. Token type is 'customer'
  * 3. Customer belongs to current restaurant (tenant validation)
  * 4. Customer account is active
+ *
+ * OPTIMIZATIONS: Same as authMiddleware
  */
 export const customerAuthMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  const startTime = Date.now();
+
   try {
     // Extract token from Authorization header
     const authHeader = req.headers.authorization;
@@ -323,8 +425,8 @@ export const customerAuthMiddleware = async (
 
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
-    // Verify and decode JWT token
-    const decoded = jwt.verify(token, jwtConfig.secret) as JwtPayload;
+    // Verify and decode JWT token (with caching)
+    const decoded = verifyJwtWithCache(token);
 
     // Verify this is a customer token
     if (decoded.type !== 'customer') {
@@ -355,11 +457,22 @@ export const customerAuthMiddleware = async (
       return;
     }
 
-    // Get customer from database (with restaurant validation)
-    const customer = await Customer.findOne({
-      _id: decoded.id,
-      restaurantId: req.restaurantId,
-    }).select('-password');
+    // Get customer from cache or database with request deduplication
+    const cacheKey = CacheKeys.customerUser(decoded.id, req.restaurantId!.toString());
+    const customer = await withCache(
+      cacheKey,
+      CacheTTL.USER_DATA,
+      async () => {
+        // OPTIMIZATION: Use lean() and select()
+        return Customer.findOne({
+          _id: decoded.id,
+          restaurantId: req.restaurantId,
+        })
+          .select('_id email fullName phone isActive restaurantId')
+          .lean()
+          .exec();
+      }
+    );
 
     if (!customer) {
       res.status(401).json({
@@ -381,9 +494,23 @@ export const customerAuthMiddleware = async (
     }
 
     // Attach customer to request
-    req.customer = customer;
+    req.customer = customer as any;
+
+    const duration = Date.now() - startTime;
+    if (duration > 10) {
+      console.warn(`[AUTH SLOW] Customer auth took ${duration}ms for ${decoded.id}`);
+    }
+
     next();
   } catch (error: any) {
+    // Clear cache on JWT errors
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      const token = req.headers.authorization?.substring(7);
+      if (token) {
+        jwtVerificationCache.delete(token);
+      }
+    }
+
     // Handle JWT errors
     if (error.name === 'JsonWebTokenError') {
       res.status(401).json({
@@ -418,6 +545,8 @@ export const customerAuthMiddleware = async (
  * Same as customerAuthMiddleware but doesn't fail if no token is provided.
  * Allows routes to work for both authenticated customers and guests.
  * If a valid token is present, attaches customer to req.customer
+ *
+ * OPTIMIZATIONS: Same as authMiddleware
  */
 export const optionalCustomerAuth = async (
   req: Request,
@@ -435,20 +564,31 @@ export const optionalCustomerAuth = async (
     const token = authHeader.substring(7);
 
     try {
-      // Verify and decode JWT token
-      const decoded = jwt.verify(token, jwtConfig.secret) as JwtPayload;
+      // Verify and decode JWT token (with caching)
+      const decoded = verifyJwtWithCache(token);
 
       // Only process if this is a customer token
       if (decoded.type === 'customer' && decoded.restaurantId === req.restaurantId?.toString()) {
-        // Get customer from database
-        const customer = await Customer.findOne({
-          _id: decoded.id,
-          restaurantId: req.restaurantId,
-        }).select('-password');
+        // Get customer from cache or database
+        const cacheKey = CacheKeys.customerUser(decoded.id, req.restaurantId!.toString());
+        const customer = await withCache(
+          cacheKey,
+          CacheTTL.USER_DATA,
+          async () => {
+            // OPTIMIZATION: Use lean() and select()
+            return Customer.findOne({
+              _id: decoded.id,
+              restaurantId: req.restaurantId,
+            })
+              .select('_id email fullName phone isActive restaurantId')
+              .lean()
+              .exec();
+          }
+        );
 
         // Only attach customer if found and active
         if (customer && customer.isActive) {
-          req.customer = customer;
+          req.customer = customer as any;
         }
       }
     } catch (jwtError) {

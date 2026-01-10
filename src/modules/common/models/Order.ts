@@ -186,11 +186,25 @@ const orderSchema = new Schema<IOrder>(
 // CRITICAL: Compound unique index for multi-tenancy
 // Order number is unique within a restaurant, not globally
 orderSchema.index({ restaurantId: 1, orderNumber: 1 }, { unique: true });
-// Additional indexes for query performance
-orderSchema.index({ restaurantId: 1, tableId: 1 });
-orderSchema.index({ restaurantId: 1, status: 1 });
+
+// CRITICAL INDEXES FOR QUERY PERFORMANCE OPTIMIZATION
+// 1. Active orders query (most frequently accessed) - getActiveOrders()
+orderSchema.index({ restaurantId: 1, status: 1, createdAt: -1 });
+
+// 2. Orders by table query - getOrdersByTable()
+orderSchema.index({ restaurantId: 1, tableId: 1, createdAt: -1 });
+
+// 3. Order history with date range filtering - getOrderHistory()
 orderSchema.index({ restaurantId: 1, createdAt: -1 });
+
+// 4. Customer order history
 orderSchema.index({ restaurantId: 1, customerId: 1, createdAt: -1 });
+
+// 5. Customer active orders (for home page query)
+orderSchema.index({ customerId: 1, restaurantId: 1, status: 1, createdAt: -1 });
+
+// 6. Dashboard stats optimization - covers status + date queries
+orderSchema.index({ restaurantId: 1, status: 1, createdAt: 1 });
 
 // Auto-generate order number before validation (RESTAURANT-SCOPED)
 // NOTE: Using pre('validate') instead of pre('save') to run before required field validation

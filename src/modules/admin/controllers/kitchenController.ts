@@ -1,20 +1,73 @@
 import { Request, Response } from 'express';
 import Order from '../../common/models/Order';
+import Customer from '../../common/models/Customer';
+import Restaurant from '../../common/models/Restaurant';
 import { getSocketService } from '../../common/services/socketService';
+import notificationService from '../../../services/notification.service';
+import {
+  cacheManager,
+  CacheKeys,
+} from '../../common/utils/cacheUtils';
 
-// @desc    Get kitchen display orders (tenant-scoped)
+// @desc    Get kitchen display orders (tenant-scoped) - OPTIMIZED
 // @route   GET /api/kitchen/orders
 // @access  Private (Admin)
 export const getKitchenOrders = async (req: Request, res: Response): Promise<void> => {
+  const startTime = Date.now();
+  let cacheCheckTime = 0;
+  let dbQueryTime = 0;
+
   try {
-    const orders = await Order.find({
-      restaurantId: req.restaurantId,
-      status: { $in: ['received', 'preparing', 'ready'] },
-    })
+    const restaurantId = req.restaurantId!.toString();
+    const cacheKey = CacheKeys.kitchenOrders(restaurantId);
+
+    // Try cache (10 second TTL for real-time kitchen updates)
+    const cacheStart = Date.now();
+    const cached = await cacheManager.get<any>(cacheKey);
+    cacheCheckTime = Date.now() - cacheStart;
+
+    if (cached) {
+      console.log(`[KITCHEN API] Cache HIT - took ${cacheCheckTime}ms`);
+      const totalTime = Date.now() - startTime;
+      res.status(200).json({
+        ...cached,
+        cached: true,
+        _perf: {
+          total: totalTime,
+          cache: cacheCheckTime,
+          db: 0,
+        },
+      });
+      return;
+    }
+
+    console.log(`[KITCHEN API] Cache MISS - querying database`);
+
+    const dbStart = Date.now();
+
+    const orders = await Order.find(
+      {
+        restaurantId: req.restaurantId,
+        status: { $in: ['received', 'preparing', 'ready'] },
+      },
+      {
+        // Select only required fields for kitchen display
+        orderNumber: 1,
+        tableNumber: 1,
+        tableId: 1,
+        items: 1,
+        total: 1,
+        status: 1,
+        notes: 1,
+        createdAt: 1,
+      }
+    )
       .populate('tableId', 'tableNumber location')
       .sort({ createdAt: 1 }) // Oldest first (FIFO)
       .lean()
       .exec();
+
+    dbQueryTime = Date.now() - dbStart;
 
     // Group by status for better kitchen display
     const grouped = {
@@ -23,10 +76,28 @@ export const getKitchenOrders = async (req: Request, res: Response): Promise<voi
       ready: orders.filter((o) => o.status === 'ready'),
     };
 
-    res.status(200).json({
+    const responseData = {
       success: true,
       data: grouped,
       total: orders.length,
+    };
+
+    // Cache for 10 seconds (real-time updates important for kitchen)
+    await cacheManager.set(cacheKey, responseData, 10000);
+
+    const totalTime = Date.now() - startTime;
+    console.log(
+      `[KITCHEN API] ✅ TOTAL TIME: ${totalTime}ms (cache: ${cacheCheckTime}ms, db: ${dbQueryTime}ms)`
+    );
+
+    res.status(200).json({
+      ...responseData,
+      cached: false,
+      _perf: {
+        total: totalTime,
+        cache: cacheCheckTime,
+        db: dbQueryTime,
+      },
     });
   } catch (error: any) {
     console.error('Get kitchen orders error:', error);
@@ -73,14 +144,40 @@ export const startOrder = async (req: Request, res: Response): Promise<void> => 
 
     await order.save();
 
+    // Invalidate kitchen orders cache
+    const restaurantId = req.restaurantId!.toString();
+    await cacheManager.delete(CacheKeys.kitchenOrders(restaurantId));
+    await cacheManager.delete(CacheKeys.activeOrders(restaurantId));
+    await cacheManager.delete(CacheKeys.dashboardPageData(restaurantId));
+
     // Emit Socket.io event to restaurant namespace
     try {
       const socketService = getSocketService();
-      const restaurantId = req.restaurantId!.toString();
       socketService.emitOrderStatusUpdate(restaurantId, order.tableNumber, order);
       socketService.emitOrderStatusChange(restaurantId, order);
     } catch (socketError) {
       console.error('Socket emit error (non-critical):', socketError);
+    }
+
+    // Send FCM notification to customer if order belongs to authenticated customer
+    try {
+      if (order.customerId) {
+        const customer = await Customer.findById(order.customerId).lean().exec();
+        const restaurant = await Restaurant.findById(req.restaurantId).lean().exec();
+
+        if (customer && customer.fcmToken && restaurant) {
+          await notificationService.notifyOrderStatusChange(
+            customer.fcmToken,
+            order._id.toString(),
+            order.orderNumber,
+            'preparing',
+            restaurant.name
+          );
+          console.log(`✓ FCM notification sent to customer: order ${order.orderNumber} preparing`);
+        }
+      }
+    } catch (fcmError) {
+      console.error('FCM notification error (non-critical):', fcmError);
     }
 
     res.status(200).json({
@@ -133,14 +230,40 @@ export const markOrderReady = async (req: Request, res: Response): Promise<void>
 
     await order.save();
 
+    // Invalidate kitchen orders cache
+    const restaurantId = req.restaurantId!.toString();
+    await cacheManager.delete(CacheKeys.kitchenOrders(restaurantId));
+    await cacheManager.delete(CacheKeys.activeOrders(restaurantId));
+    await cacheManager.delete(CacheKeys.dashboardPageData(restaurantId));
+
     // Emit Socket.io event to restaurant namespace
     try {
       const socketService = getSocketService();
-      const restaurantId = req.restaurantId!.toString();
       socketService.emitOrderStatusUpdate(restaurantId, order.tableNumber, order);
       socketService.emitOrderStatusChange(restaurantId, order);
     } catch (socketError) {
       console.error('Socket emit error (non-critical):', socketError);
+    }
+
+    // Send FCM notification to customer if order belongs to authenticated customer
+    try {
+      if (order.customerId) {
+        const customer = await Customer.findById(order.customerId).lean().exec();
+        const restaurant = await Restaurant.findById(req.restaurantId).lean().exec();
+
+        if (customer && customer.fcmToken && restaurant) {
+          await notificationService.notifyOrderStatusChange(
+            customer.fcmToken,
+            order._id.toString(),
+            order.orderNumber,
+            'ready',
+            restaurant.name
+          );
+          console.log(`✓ FCM notification sent to customer: order ${order.orderNumber} ready`);
+        }
+      }
+    } catch (fcmError) {
+      console.error('FCM notification error (non-critical):', fcmError);
     }
 
     res.status(200).json({

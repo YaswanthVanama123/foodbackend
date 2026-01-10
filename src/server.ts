@@ -13,6 +13,7 @@ import { initializeSocket } from './modules/common/config/socket';
 import { initSocketService } from './modules/common/services/socketService';
 import { extractTenant } from './modules/common/middleware/tenantMiddleware';
 import { errorHandler } from './modules/common/middleware/errorHandler';
+import firebaseService from './services/firebase.service';
 
 // Load environment variables
 dotenv.config();
@@ -32,6 +33,7 @@ import {
   kitchenRoutes,
   uploadRoutes,
   restaurantRoutes,
+  fcmTokenRoutes as adminFcmTokenRoutes,
 } from './modules/admin';
 
 // Import routes from user module
@@ -41,6 +43,8 @@ import {
   customerOrderRoutes,
   reviewRoutes,
   favoritesRoutes,
+  fcmTokenRoutes,
+  homeRoutes,
 } from './modules/user';
 
 // Import routes from superadmin module
@@ -51,6 +55,7 @@ import {
   planRoutes,
   ticketRoutes,
   auditRoutes,
+  fcmTokenRoutes as superAdminFcmTokenRoutes,
 } from './modules/superadmin';
 
 // Import public routes from common module
@@ -70,6 +75,9 @@ initSocketService(io);
 
 // Connect to MongoDB
 connectDB();
+
+// Initialize Firebase Admin SDK for push notifications
+firebaseService.initialize();
 
 // Trust proxy (for CORS and security)
 app.set('trust proxy', 1);
@@ -162,6 +170,7 @@ app.use('/api/public', publicRoutes);
 
 // Super Admin Routes (NO tenant middleware - operates at platform level)
 app.use('/api/super-admin', superAdminRoutes);
+app.use('/api/super-admin', superAdminFcmTokenRoutes); // Super Admin FCM token management
 app.use('/api/superadmin/analytics', platformAnalyticsRoutes);
 app.use('/api/superadmin/subscriptions', subscriptionRoutes);
 app.use('/api/superadmin/plans', planRoutes);
@@ -186,12 +195,15 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/kitchen', kitchenRoutes);
 app.use('/api/restaurants', restaurantRoutes);
+app.use('/api/admin', adminFcmTokenRoutes); // Admin FCM token management
 
 // Customer Routes (from modules/user - All tenant-scoped)
+app.use('/api/home', homeRoutes); // Combined home page data
 app.use('/api/customers/auth', customerAuthRoutes);
 app.use('/api/customers/cart', customerCartRoutes);
 app.use('/api/customers/favorites', favoritesRoutes);
 app.use('/api/customers/orders', customerOrderRoutes);
+app.use('/api/customers', fcmTokenRoutes); // FCM token management
 app.use('/api/reviews', reviewRoutes);
 
 // Upload Routes (from modules/admin - Tenant-scoped)
@@ -299,6 +311,7 @@ server.listen(PORT, () => {
 ║   Server: http://localhost:${PORT}                        ║
 ║   Environment: ${NODE_ENV.toUpperCase().padEnd(14)}                      ║
 ║   Socket.io: ✓ Namespace-Based Isolation                 ║
+║   Firebase: ${firebaseService.isReady() ? '✓ Push Notifications Enabled' : '⚠️  Not Configured'}           ║
 ║   Compression: ✓ Enabled                                  ║
 ║   Rate Limiting: ✓ Enabled                                ║
 ║   Security: ✓ Enhanced                                    ║

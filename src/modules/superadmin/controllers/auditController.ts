@@ -381,3 +381,101 @@ export const cleanupOldLogs = async (req: Request, res: Response): Promise<void>
     });
   }
 };
+
+/**
+ * @desc    Get audit logs page data (logs + admins) - OPTIMIZED (SINGLE REQUEST)
+ * @route   GET /api/super-admin/audit-logs/page-data
+ * @access  Super Admin Only
+ */
+export const getAuditLogsPageData = async (req: Request, res: Response): Promise<void> => {
+  const startTime = Date.now();
+  let logsTime = 0;
+  let adminsTime = 0;
+
+  try {
+    const {
+      action,
+      actorType,
+      actorId,
+      resourceType,
+      resourceId,
+      severity,
+      startDate,
+      endDate,
+      search,
+      page = '1',
+      limit = '20',
+      sort = '-timestamp',
+    } = req.query;
+
+    // Build filters
+    const filters: any = {};
+    if (action) filters.action = action as string;
+    if (actorType) filters.actorType = actorType as string;
+    if (actorId) filters.actorId = actorId as string;
+    if (resourceType) filters.resourceType = resourceType as string;
+    if (resourceId) filters.resourceId = resourceId as string;
+    if (severity) filters.severity = severity as string;
+    if (startDate) filters.startDate = startDate as string;
+    if (endDate) filters.endDate = endDate as string;
+    if (search) filters.search = search as string;
+
+    // Pagination
+    const pagination = {
+      page: parseInt(page as string, 10),
+      limit: parseInt(limit as string, 10),
+      sort: sort as string,
+    };
+
+    // Validate pagination
+    if (pagination.page < 1) pagination.page = 1;
+    if (pagination.limit < 1 || pagination.limit > 100) pagination.limit = 20;
+
+    // Fetch logs and admins in parallel
+    const logsStart = Date.now();
+    const adminStart = Date.now();
+
+    const [logsResult, admins] = await Promise.all([
+      auditService.getAuditLogs(filters, pagination),
+      (async () => {
+        const Admin = (await import('../../common/models/Admin')).default;
+        return Admin.find({})
+          .select('_id username email')
+          .limit(100)
+          .lean()
+          .exec();
+      })(),
+    ]);
+
+    logsTime = Date.now() - logsStart;
+    adminsTime = Date.now() - adminStart;
+
+    const totalTime = Date.now() - startTime;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        logs: logsResult.logs,
+        pagination: logsResult.pagination,
+        admins: admins.map((admin) => ({
+          _id: admin._id,
+          username: admin.username,
+          email: admin.email,
+        })),
+      },
+      filters: filters,
+      _perf: {
+        total: totalTime,
+        logs: logsTime,
+        admins: adminsTime,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching audit logs page data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch audit logs page data',
+      error: error.message,
+    });
+  }
+};

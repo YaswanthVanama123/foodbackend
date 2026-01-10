@@ -178,10 +178,18 @@ const menuItemSchema = new Schema<IMenuItem>(
 );
 
 // CRITICAL: Indexes for multi-tenancy and query performance
+// Compound index for filtering menu items by restaurant, category, and availability
 menuItemSchema.index({ restaurantId: 1, categoryId: 1, isAvailable: 1 });
+
+// Additional indexes for common queries
 menuItemSchema.index({ restaurantId: 1, name: 1 });
 menuItemSchema.index({ restaurantId: 1, isAvailable: 1 });
-// Text search index (restaurant-scoped)
+menuItemSchema.index({ restaurantId: 1, createdAt: -1 }); // For sorting by creation date
+menuItemSchema.index({ restaurantId: 1, isAvailable: 1, createdAt: -1 }); // Compound for filtered lists with date sort
+menuItemSchema.index({ restaurantId: 1, categoryId: 1, createdAt: -1 }); // For category + date sorting
+menuItemSchema.index({ categoryId: 1 });
+
+// Text search index for searching menu items by name and description (restaurant-scoped)
 menuItemSchema.index({ restaurantId: 1, name: 'text', description: 'text' });
 
 // Virtual field for backward compatibility: returns images.original if available

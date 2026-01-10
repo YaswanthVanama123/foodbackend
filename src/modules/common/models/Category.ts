@@ -75,7 +75,12 @@ const categorySchema = new Schema<ICategory>(
 // CRITICAL: Compound unique index for multi-tenancy
 // Category name is unique within a restaurant, not globally
 categorySchema.index({ restaurantId: 1, name: 1 }, { unique: true });
-// Additional indexes for query performance
+
+// CRITICAL INDEXES FOR QUERY PERFORMANCE
+// Compound index for filtering categories by restaurant, active status, and sort order
+categorySchema.index({ restaurantId: 1, isActive: 1, displayOrder: 1 });
+
+// Additional indexes for common queries
 categorySchema.index({ restaurantId: 1, displayOrder: 1 });
 categorySchema.index({ restaurantId: 1, isActive: 1 });
 
