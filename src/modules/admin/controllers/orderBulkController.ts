@@ -242,6 +242,65 @@ export const bulkUpdateOrderStatus = async (req: Request, res: Response): Promis
       })(),
     ]);
 
+    // CRITICAL: Auto-delete customer accounts when ALL their orders are served/cancelled
+    // This runs for bulk status updates to "served"
+    if (status === 'served') {
+      try {
+        // Get unique customer IDs from the updated orders
+        const customerIds = [
+          ...new Set(
+            updatedOrders
+              .filter((order) => order.customerId)
+              .map((order) => order.customerId!.toString())
+          ),
+        ];
+
+        console.log(
+          `[Bulk Customer Auto-Delete] Checking ${customerIds.length} customers for deletion`
+        );
+
+        // Check each customer for active orders
+        const deletionResults = await Promise.allSettled(
+          customerIds.map(async (customerId) => {
+            // Count active orders (not served/cancelled)
+            const activeOrders = await Order.countDocuments({
+              customerId: new Types.ObjectId(customerId),
+              status: { $nin: ['served', 'cancelled'] },
+            }).exec();
+
+            if (activeOrders === 0) {
+              // Delete customer permanently
+              await Customer.findByIdAndDelete(customerId).exec();
+              console.log(
+                `[Bulk Customer Auto-Delete] ✓ Deleted customer ${customerId} - all orders completed`
+              );
+              return { customerId, deleted: true };
+            } else {
+              console.log(
+                `[Bulk Customer Auto-Delete] Customer ${customerId} has ${activeOrders} active orders remaining`
+              );
+              return { customerId, deleted: false, activeOrders };
+            }
+          })
+        );
+
+        const deletedCount = deletionResults.filter(
+          (result) => result.status === 'fulfilled' && result.value.deleted
+        ).length;
+
+        if (deletedCount > 0) {
+          console.log(
+            `[Bulk Customer Auto-Delete] ✓ Deleted ${deletedCount} customer account(s). Usernames now available for re-registration.`
+          );
+        }
+      } catch (customerDeleteError) {
+        console.error(
+          '[Bulk Customer Auto-Delete] Error during customer deletion:',
+          customerDeleteError
+        );
+      }
+    }
+
     console.log(`✓ Bulk status update completed: ${updatedOrders.length} orders updated to ${status}`);
 
     res.status(200).json({

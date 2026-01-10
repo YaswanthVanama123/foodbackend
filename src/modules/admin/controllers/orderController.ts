@@ -586,6 +586,41 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
       // Continue even if FCM fails
     }
 
+    // CRITICAL: Auto-delete customer account when ALL orders are served/cancelled
+    // This allows username to be reused for new registrations
+    try {
+      if (status === 'served' && order.customerId) {
+        const customerId = order.customerId.toString();
+
+        // Check if customer has any other active orders (not served/cancelled)
+        const activeOrders = await Order.countDocuments({
+          customerId: order.customerId,
+          status: { $nin: ['served', 'cancelled'] },
+        }).exec();
+
+        console.log(
+          `[Customer Auto-Delete] Customer ${customerId} has ${activeOrders} active orders remaining`
+        );
+
+        // If no active orders remain, permanently delete the customer
+        if (activeOrders === 0) {
+          console.log(
+            `[Customer Auto-Delete] Deleting customer ${customerId} - all orders completed`
+          );
+
+          // Delete customer permanently (this frees up the username)
+          await Customer.findByIdAndDelete(customerId).exec();
+
+          console.log(
+            `[Customer Auto-Delete] ✓ Customer ${customerId} deleted successfully. Username is now available for re-registration.`
+          );
+        }
+      }
+    } catch (customerDeleteError) {
+      // Log error but don't fail the request
+      console.error('[Customer Auto-Delete] Error during customer deletion:', customerDeleteError);
+    }
+
     res.status(200).json({
       success: true,
       data: populatedOrder,
