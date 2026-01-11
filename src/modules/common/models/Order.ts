@@ -39,6 +39,7 @@ export interface IOrder extends Document {
   items: IOrderItem[];
   subtotal: number;
   tax: number;
+  tip: number;
   total: number;
   status: OrderStatus;
   statusHistory: IStatusHistory[];
@@ -176,6 +177,11 @@ const orderSchema = new Schema<IOrder>(
       required: true,
     },
     tax: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    tip: {
       type: Number,
       required: true,
       default: 0,

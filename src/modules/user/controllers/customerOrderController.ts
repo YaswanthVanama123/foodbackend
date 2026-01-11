@@ -48,7 +48,7 @@ export const getOrderHistory = async (req: Request, res: Response): Promise<void
     // OPTIMIZATION: Fetch orders with pagination, minimal payload, and lean queries
     const [orders, total] = await Promise.all([
       Order.find(filter)
-        .select('orderNumber tableNumber status items subtotal tax total createdAt notes')
+        .select('orderNumber tableNumber status items subtotal tax tip total createdAt notes')
         .populate('tableId', 'tableNumber location')
         .populate('items.menuItemId', 'name images.small isAvailable') // Use small image variant
         .sort({ createdAt: -1 }) // Newest first - uses index
@@ -116,7 +116,7 @@ export const getOrderDetails = async (req: Request, res: Response): Promise<void
       restaurantId,
       customerId, // Ensure order belongs to customer
     })
-      .select('orderNumber tableNumber tableId status items subtotal tax total createdAt notes statusHistory')
+      .select('orderNumber tableNumber tableId status items subtotal tax tip total createdAt notes statusHistory')
       .populate('tableId', 'tableNumber location capacity')
       .populate('items.menuItemId', 'name description images.medium price isAvailable categoryId') // Use medium image
       .lean() // CRITICAL: Returns plain JS objects
@@ -159,7 +159,7 @@ export const reorder = async (req: Request, res: Response): Promise<void> => {
     const customerId = req.customer?._id;
     const restaurantId = req.restaurantId;
     const { orderId } = req.params;
-    const { tableId, notes } = req.body;
+    const { tableId, notes, tip = 0 } = req.body;
 
     // OPTIMIZATION: Fail fast - validate auth first
     if (!customerId) {
@@ -343,8 +343,8 @@ export const reorder = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Calculate totals for new order
-    const { subtotal, tax, total } = calculateOrderTotals(newOrderItems);
+    // Calculate totals for new order with tip
+    const { subtotal, tax, total } = calculateOrderTotals(newOrderItems, tip);
 
     // OPTIMIZATION: Create new order within transaction
     const [newOrder] = await Order.create(
@@ -357,6 +357,7 @@ export const reorder = async (req: Request, res: Response): Promise<void> => {
           items: newOrderItems,
           subtotal,
           tax,
+          tip,
           total,
           notes: notes || originalOrder.notes,
           status: 'received',
@@ -383,7 +384,7 @@ export const reorder = async (req: Request, res: Response): Promise<void> => {
 
     // OPTIMIZATION: Populate order details AFTER transaction for response only
     const populatedOrder = await Order.findById(newOrder._id)
-      .select('orderNumber tableNumber tableId status items subtotal tax total createdAt notes')
+      .select('orderNumber tableNumber tableId status items subtotal tax tip total createdAt notes')
       .populate('tableId', 'tableNumber location')
       .populate('items.menuItemId', 'name description images.small')
       .lean()

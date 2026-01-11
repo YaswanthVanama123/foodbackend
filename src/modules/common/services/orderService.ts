@@ -4,17 +4,18 @@ import Table from '../models/Table';
 const TAX_RATE = 0.08; // 8% tax rate (adjust as needed)
 
 // Calculate order totals
-export const calculateOrderTotals = (items: IOrderItem[]) => {
+export const calculateOrderTotals = (items: IOrderItem[], tip: number = 0) => {
   const subtotal = items.reduce((sum, item) => {
     return sum + item.subtotal;
   }, 0);
 
   const tax = subtotal * TAX_RATE;
-  const total = subtotal + tax;
+  const total = subtotal + tax + tip;
 
   return {
     subtotal: parseFloat(subtotal.toFixed(2)),
     tax: parseFloat(tax.toFixed(2)),
+    tip: parseFloat(tip.toFixed(2)),
     total: parseFloat(total.toFixed(2)),
   };
 };

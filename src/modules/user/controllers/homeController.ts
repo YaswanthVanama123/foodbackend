@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
  * - Short cache (10s) for real-time table availability
  * - .lean() equivalent in aggregation
  * - Minimal field projection
+ * - Returns ALL active orders (not just one) for multi-order support
  *
  * Target: <100ms (cloud DB with single query)
  */
@@ -90,7 +91,7 @@ export const getHomePageData = async (req: Request, res: Response): Promise<void
         },
       ];
 
-      // Add active order lookup only if customer is authenticated
+      // Add active orders lookup only if customer is authenticated
       if (customerId) {
         pipeline.push({
           $lookup: {
@@ -119,30 +120,15 @@ export const getHomePageData = async (req: Request, res: Response): Promise<void
                 },
               },
               { $sort: { createdAt: -1 } },
-              { $limit: 1 },
             ],
             as: 'activeOrders',
           },
         });
-
-        // Extract first active order from array
-        pipeline.push({
-          $addFields: {
-            activeOrder: { $arrayElemAt: ['$activeOrders', 0] },
-          },
-        });
-
-        // Remove temporary array
-        pipeline.push({
-          $project: {
-            activeOrders: 0,
-          },
-        });
       } else {
-        // If not authenticated, set activeOrder to null
+        // If not authenticated, set activeOrders to empty array
         pipeline.push({
           $addFields: {
-            activeOrder: null,
+            activeOrders: [],
           },
         });
       }
@@ -177,7 +163,7 @@ export const getHomePageData = async (req: Request, res: Response): Promise<void
           accentColor: result.accentColor,
         },
         tables: result.tables || [],
-        activeOrder: result.activeOrder || null,
+        activeOrders: result.activeOrders || [],
       },
       cached: !!cached,
       _perf: {

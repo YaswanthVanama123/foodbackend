@@ -254,7 +254,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
   let dbQueryTime = 0;
 
   try {
-    const { tableId, items, notes } = req.body;
+    const { tableId, items, notes, tip = 0 } = req.body;
 
     // OPTIMIZATION: Retry logic for race conditions
     let order: any;
@@ -307,8 +307,8 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
           subtotal: calculateItemSubtotal(item.price, item.quantity, item.customizations),
         }));
 
-        // Calculate totals
-        const { subtotal, tax, total } = calculateOrderTotals(orderItems);
+        // Calculate totals with tip
+        const { subtotal, tax, total } = calculateOrderTotals(orderItems, tip);
 
         // CRITICAL: Create order with restaurantId and optional customerId
         const orderData: any = {
@@ -318,6 +318,7 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
           items: orderItems,
           subtotal,
           tax,
+          tip,
           total,
           notes,
           status: 'received',
