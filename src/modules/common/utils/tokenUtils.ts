@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken';
 import { jwtConfig } from '../config/jwt';
-import { RedisCache, CacheKeys } from '../config/redis';
 import crypto from 'crypto';
 
 interface RefreshTokenPayload {
@@ -26,7 +25,7 @@ const generateTokenId = (): string => {
 };
 
 /**
- * Generate access and refresh token pair
+ * Generate access and refresh token pair (without Redis storage)
  * @param customerId Customer ID
  * @param restaurantId Restaurant ID
  * @returns Token pair with access and refresh tokens
@@ -60,20 +59,6 @@ export const generateTokenPair = async (
     { expiresIn: jwtConfig.refreshTokenExpire } as any
   );
 
-  // Store refresh token in Redis (for rotation and revocation)
-  const refreshKey = CacheKeys.refreshToken(customerId, tokenId);
-  const ttl = 365 * 24 * 60 * 60; // 1 year in seconds
-  await RedisCache.set(
-    refreshKey,
-    {
-      customerId,
-      restaurantId,
-      tokenId,
-      createdAt: Date.now(),
-    },
-    ttl
-  );
-
   return {
     accessToken,
     refreshToken,
@@ -82,7 +67,7 @@ export const generateTokenPair = async (
 };
 
 /**
- * Verify and decode refresh token
+ * Verify and decode refresh token (without Redis revocation check)
  * @param refreshToken Refresh token to verify
  * @returns Decoded token payload or null if invalid
  */
@@ -91,15 +76,6 @@ export const verifyRefreshToken = async (
 ): Promise<RefreshTokenPayload | null> => {
   try {
     const decoded = jwt.verify(refreshToken, jwtConfig.refreshSecret) as RefreshTokenPayload;
-
-    // Verify token exists in Redis (not revoked)
-    const refreshKey = CacheKeys.refreshToken(decoded.id, decoded.tokenId);
-    const exists = await RedisCache.exists(refreshKey);
-
-    if (!exists) {
-      return null; // Token was revoked
-    }
-
     return decoded;
   } catch (error) {
     return null;
@@ -107,7 +83,7 @@ export const verifyRefreshToken = async (
 };
 
 /**
- * Rotate refresh token (invalidate old, generate new)
+ * Rotate refresh token (generate new token pair)
  * @param oldRefreshToken Old refresh token
  * @returns New token pair or null if invalid
  */
@@ -120,47 +96,37 @@ export const rotateRefreshToken = async (
     return null;
   }
 
-  // Revoke old refresh token
-  await revokeRefreshToken(decoded.id, decoded.tokenId);
-
   // Generate new token pair
   return generateTokenPair(decoded.id, decoded.restaurantId);
 };
 
 /**
- * Revoke a specific refresh token
+ * Revoke a specific refresh token (no-op without Redis)
  * @param customerId Customer ID
  * @param tokenId Token ID to revoke
  */
 export const revokeRefreshToken = async (
-  customerId: string,
-  tokenId: string
+  _customerId: string,
+  _tokenId: string
 ): Promise<void> => {
-  const refreshKey = CacheKeys.refreshToken(customerId, tokenId);
-  await RedisCache.del(refreshKey);
+  // No-op without Redis
+  return;
 };
 
 /**
- * Revoke all refresh tokens for a customer
+ * Revoke all refresh tokens for a customer (no-op without Redis)
  * @param customerId Customer ID
  */
-export const revokeAllRefreshTokens = async (customerId: string): Promise<void> => {
-  // Delete all refresh tokens for this customer
-  await RedisCache.delPattern(`refresh:${customerId}:*`);
+export const revokeAllRefreshTokens = async (_customerId: string): Promise<void> => {
+  // No-op without Redis
+  return;
 };
 
 /**
- * Get all active refresh tokens for a customer
+ * Get all active refresh tokens for a customer (always returns 0 without Redis)
  * @param customerId Customer ID
  * @returns Count of active refresh tokens
  */
 export const getActiveRefreshTokenCount = async (_customerId: string): Promise<number> => {
-  try {
-    // This is a simple implementation - you might want to store a counter instead
-    // for better performance at scale
-    return 0; // Placeholder - would need Redis SCAN implementation
-  } catch (error) {
-    console.error('Error getting refresh token count:', error);
-    return 0;
-  }
+  return 0;
 };

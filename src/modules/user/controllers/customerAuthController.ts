@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import Customer from '../../common/models/Customer';
 import Order from '../../common/models/Order';
-import { RedisCache, CacheKeys } from '../../common/config/redis';
 import {
   generateTokenPair,
   rotateRefreshToken,
@@ -77,27 +76,6 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const tokens = await generateTokenPair(
       customer._id.toString(),
       customer.restaurantId.toString()
-    );
-
-    // OPTIMIZATION: Cache customer session in Redis
-    const cacheKey = CacheKeys.jwtSession(
-      customer._id.toString(),
-      customer.restaurantId.toString()
-    );
-    await RedisCache.set(
-      cacheKey,
-      {
-        customer: {
-          _id: customer._id,
-          username: customer.username,
-          restaurantId: customer.restaurantId,
-          isActive: customer.isActive,
-          createdAt: customer.createdAt,
-          updatedAt: customer.updatedAt,
-        },
-        cachedAt: Date.now(),
-      },
-      300 // 5 minutes
     );
 
     res.status(201).json({
@@ -189,20 +167,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const tokens = await generateTokenPair(
       customer._id.toString(),
       customer.restaurantId.toString()
-    );
-
-    // OPTIMIZATION: Cache customer session in Redis
-    const cacheKey = CacheKeys.jwtSession(
-      customer._id.toString(),
-      customer.restaurantId.toString()
-    );
-    await RedisCache.set(
-      cacheKey,
-      {
-        customer,
-        cachedAt: Date.now(),
-      },
-      300 // 5 minutes
     );
 
     res.status(200).json({

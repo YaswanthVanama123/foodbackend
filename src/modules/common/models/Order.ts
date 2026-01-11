@@ -244,23 +244,39 @@ orderSchema.pre('validate', async function (next) {
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
 
-    // Create date boundaries for counting today's orders
+    // Create date boundaries for today's orders
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
 
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // CRITICAL: Count orders for THIS restaurant only
-    const count = await mongoose.model('Order').countDocuments({
+    // CRITICAL: Find the latest order number for THIS restaurant today
+    // This is more reliable than countDocuments for handling race conditions
+    // Sort by createdAt descending to get the most recent order
+    const latestOrder = await mongoose.model('Order').findOne({
       restaurantId: this.restaurantId,
-      createdAt: {
-        $gte: startOfDay,
-        $lt: endOfDay,
-      },
-    });
+      orderNumber: { $regex: `^ORD-${dateStr}` }, // Only today's orders
+    })
+      .sort({ createdAt: -1 }) // Sort by creation time, not orderNumber string
+      .select('orderNumber')
+      .lean()
+      .exec() as { orderNumber?: string } | null;
 
-    this.orderNumber = `ORD-${dateStr}-${String(count + 1).padStart(3, '0')}`;
+    let nextNumber = 1;
+
+    if (latestOrder && latestOrder.orderNumber) {
+      // Extract the numeric part from the order number (e.g., "ORD-20260110-001" -> 1)
+      const parts = latestOrder.orderNumber.split('-');
+      if (parts.length === 3) {
+        const lastNumber = parseInt(parts[2], 10);
+        if (!isNaN(lastNumber)) {
+          nextNumber = lastNumber + 1;
+        }
+      }
+    }
+
+    this.orderNumber = `ORD-${dateStr}-${String(nextNumber).padStart(3, '0')}`;
     console.log('[Order Hook] Generated orderNumber:', this.orderNumber);
     next();
   } catch (error: any) {

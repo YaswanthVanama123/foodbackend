@@ -253,91 +253,122 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
   const startTime = Date.now();
   let dbQueryTime = 0;
 
-  // OPTIMIZATION: Start transaction for atomicity
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { tableId, items, notes } = req.body;
 
-    const dbStart = Date.now();
+    // OPTIMIZATION: Retry logic for race conditions
+    let order: any;
+    let retries = 0;
+    const maxRetries = 5;
 
-    // CRITICAL: Verify table exists and belongs to this restaurant
-    const table = await Table.findOne(
-      {
-        _id: tableId,
-        restaurantId: req.restaurantId,
-      },
-      { tableNumber: 1, isActive: 1 }
-    )
-      .lean()
-      .session(session)
-      .exec();
+    while (retries < maxRetries) {
+      // Start new transaction for each attempt
+      const session = await mongoose.startSession();
+      session.startTransaction();
 
-    if (!table) {
-      await session.abortTransaction();
-      session.endSession();
-      res.status(404).json({
-        success: false,
-        message: 'Table not found',
-      });
-      return;
+      try {
+        const dbStart = Date.now();
+
+        // CRITICAL: Verify table exists and belongs to this restaurant
+        const table = await Table.findOne(
+          {
+            _id: tableId,
+            restaurantId: req.restaurantId,
+          },
+          { tableNumber: 1, isActive: 1 }
+        )
+          .lean()
+          .session(session)
+          .exec();
+
+        if (!table) {
+          await session.abortTransaction();
+          session.endSession();
+          res.status(404).json({
+            success: false,
+            message: 'Table not found',
+          });
+          return;
+        }
+
+        if (!table.isActive) {
+          await session.abortTransaction();
+          session.endSession();
+          res.status(400).json({
+            success: false,
+            message: 'Table is not active',
+          });
+          return;
+        }
+
+        // Calculate item subtotals
+        const orderItems = items.map((item: any) => ({
+          ...item,
+          subtotal: calculateItemSubtotal(item.price, item.quantity, item.customizations),
+        }));
+
+        // Calculate totals
+        const { subtotal, tax, total } = calculateOrderTotals(orderItems);
+
+        // CRITICAL: Create order with restaurantId and optional customerId
+        const orderData: any = {
+          restaurantId: req.restaurantId,
+          tableId,
+          tableNumber: table.tableNumber,
+          items: orderItems,
+          subtotal,
+          tax,
+          total,
+          notes,
+          status: 'received',
+        };
+
+        // If customer is authenticated, add customerId to order
+        if (req.customer) {
+          orderData.customerId = req.customer._id;
+        }
+
+        // Create order within transaction
+        [order] = await Order.create([orderData], { session });
+
+        await Table.findByIdAndUpdate(
+          tableId,
+          {
+            isOccupied: true,
+            currentOrderId: order._id,
+          },
+          { session }
+        );
+
+        // Commit transaction
+        await session.commitTransaction();
+        session.endSession();
+        dbQueryTime = Date.now() - dbStart;
+        break; // Success - exit retry loop
+      } catch (error: any) {
+        // Abort transaction on error
+        await session.abortTransaction();
+        session.endSession();
+
+        // Check if it's a duplicate key error on orderNumber
+        if (error.code === 11000 && error.keyPattern?.orderNumber) {
+          retries++;
+          if (retries >= maxRetries) {
+            throw new Error(`Failed to create order after ${maxRetries} retries due to orderNumber conflicts`);
+          }
+          console.log(`[ORDER API] Duplicate orderNumber detected, retrying (${retries}/${maxRetries})...`);
+          // Wait a bit before retry with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, 50 * Math.pow(2, retries)));
+          continue; // Retry with new transaction
+        }
+        // If it's not a duplicate key error, throw it
+        throw error;
+      }
     }
 
-    if (!table.isActive) {
-      await session.abortTransaction();
-      session.endSession();
-      res.status(400).json({
-        success: false,
-        message: 'Table is not active',
-      });
-      return;
+    if (!order) {
+      throw new Error('Failed to create order');
     }
-
-    // Calculate item subtotals
-    const orderItems = items.map((item: any) => ({
-      ...item,
-      subtotal: calculateItemSubtotal(item.price, item.quantity, item.customizations),
-    }));
-
-    // Calculate totals
-    const { subtotal, tax, total } = calculateOrderTotals(orderItems);
-
-    // CRITICAL: Create order with restaurantId and optional customerId
-    const orderData: any = {
-      restaurantId: req.restaurantId,
-      tableId,
-      tableNumber: table.tableNumber,
-      items: orderItems,
-      subtotal,
-      tax,
-      total,
-      notes,
-      status: 'received',
-    };
-
-    // If customer is authenticated, add customerId to order
-    if (req.customer) {
-      orderData.customerId = req.customer._id;
-    }
-
-    // OPTIMIZATION: Create order and update table in same transaction
-    const [order] = await Order.create([orderData], { session });
-
-    await Table.findByIdAndUpdate(
-      tableId,
-      {
-        isOccupied: true,
-        currentOrderId: order._id,
-      },
-      { session }
-    );
-
-    // OPTIMIZATION: Commit transaction before expensive operations
-    await session.commitTransaction();
-    session.endSession();
-
-    dbQueryTime = Date.now() - dbStart;
 
     // OPTIMIZATION: Populate order details AFTER transaction (only for response)
     const populatedOrder = await Order.findById(
@@ -440,10 +471,6 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
       },
     });
   } catch (error: any) {
-    // OPTIMIZATION: Rollback transaction on any error
-    await session.abortTransaction();
-    session.endSession();
-
     console.error('[ORDER API] Create order error:', error);
     res.status(500).json({
       success: false,

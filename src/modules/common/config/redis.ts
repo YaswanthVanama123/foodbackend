@@ -1,158 +1,75 @@
 import { createClient } from 'redis';
 
-// Create Redis client
+// Create Redis client (but don't connect)
 const redisClient = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379',
   socket: {
-    reconnectStrategy: (retries: number) => {
-      if (retries > 10) {
-        return new Error('Redis connection failed after 10 retries');
-      }
-      return Math.min(retries * 100, 3000);
+    reconnectStrategy: () => {
+      // Disable reconnection
+      return new Error('Redis disabled');
     },
   },
 });
 
-// Error handling
-redisClient.on('error', (err: Error) => {
-  console.error('Redis Client Error:', err);
-});
-
-redisClient.on('connect', () => {
-  console.log('Redis Client Connected');
-});
-
-// Connect to Redis
-let isRedisConnected = false;
-
-(async () => {
-  try {
-    await redisClient.connect();
-    isRedisConnected = true;
-    console.log('✅ Redis connected successfully');
-  } catch (error) {
-    console.warn('⚠️  Redis connection failed. Running without Redis cache.');
-    console.warn('   Install Redis or set REDIS_URL to enable caching.');
-    isRedisConnected = false;
-  }
-})();
+// Redis is disabled - do not connect
+console.log('[Cache] Redis disabled, using in-memory cache');
 
 // Cache utility functions
 export class RedisCache {
   /**
-   * Get value from cache
+   * Get value from cache (always returns null when disabled)
    */
-  static async get<T>(key: string): Promise<T | null> {
-    if (!isRedisConnected) return null;
-
-    try {
-      const value = await redisClient.get(key);
-      return value ? JSON.parse(value) : null;
-    } catch (error) {
-      console.error(`Redis GET error for key ${key}:`, error);
-      return null;
-    }
+  static async get<T>(_key: string): Promise<T | null> {
+    return null;
   }
 
   /**
-   * Set value in cache with expiration
-   * @param key Cache key
-   * @param value Value to cache
-   * @param ttl Time to live in seconds (default: 3600 = 1 hour)
+   * Set value in cache (no-op when disabled)
    */
-  static async set(key: string, value: any, ttl: number = 3600): Promise<void> {
-    if (!isRedisConnected) return;
-
-    try {
-      await redisClient.setEx(key, ttl, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Redis SET error for key ${key}:`, error);
-    }
+  static async set(_key: string, _value: any, _ttl: number = 3600): Promise<void> {
+    return;
   }
 
   /**
-   * Delete key from cache
+   * Delete key from cache (no-op when disabled)
    */
-  static async del(key: string): Promise<void> {
-    if (!isRedisConnected) return;
-
-    try {
-      await redisClient.del(key);
-    } catch (error) {
-      console.error(`Redis DEL error for key ${key}:`, error);
-    }
+  static async del(_key: string): Promise<void> {
+    return;
   }
 
   /**
-   * Delete multiple keys matching a pattern
+   * Delete multiple keys matching a pattern (no-op when disabled)
    */
-  static async delPattern(pattern: string): Promise<void> {
-    if (!isRedisConnected) return;
-
-    try {
-      const keys = await redisClient.keys(pattern);
-      if (keys.length > 0) {
-        await redisClient.del(keys);
-      }
-    } catch (error) {
-      console.error(`Redis DEL pattern error for ${pattern}:`, error);
-    }
+  static async delPattern(_pattern: string): Promise<void> {
+    return;
   }
 
   /**
-   * Check if key exists
+   * Check if key exists (always returns false when disabled)
    */
-  static async exists(key: string): Promise<boolean> {
-    if (!isRedisConnected) return false;
-
-    try {
-      const exists = await redisClient.exists(key);
-      return exists === 1;
-    } catch (error) {
-      console.error(`Redis EXISTS error for key ${key}:`, error);
-      return false;
-    }
+  static async exists(_key: string): Promise<boolean> {
+    return false;
   }
 
   /**
-   * Increment counter (for rate limiting)
+   * Increment counter (always returns 0 when disabled)
    */
-  static async incr(key: string): Promise<number> {
-    if (!isRedisConnected) return 0;
-
-    try {
-      return await redisClient.incr(key);
-    } catch (error) {
-      console.error(`Redis INCR error for key ${key}:`, error);
-      return 0;
-    }
+  static async incr(_key: string): Promise<number> {
+    return 0;
   }
 
   /**
-   * Set expiration on key
+   * Set expiration on key (no-op when disabled)
    */
-  static async expire(key: string, seconds: number): Promise<void> {
-    if (!isRedisConnected) return;
-
-    try {
-      await redisClient.expire(key, seconds);
-    } catch (error) {
-      console.error(`Redis EXPIRE error for key ${key}:`, error);
-    }
+  static async expire(_key: string, _seconds: number): Promise<void> {
+    return;
   }
 
   /**
-   * Get TTL of key
+   * Get TTL of key (always returns -1 when disabled)
    */
-  static async ttl(key: string): Promise<number> {
-    if (!isRedisConnected) return -1;
-
-    try {
-      return await redisClient.ttl(key);
-    } catch (error) {
-      console.error(`Redis TTL error for key ${key}:`, error);
-      return -1;
-    }
+  static async ttl(_key: string): Promise<number> {
+    return -1;
   }
 }
 

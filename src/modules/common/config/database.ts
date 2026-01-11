@@ -58,6 +58,12 @@ async function runMigrations(): Promise<void> {
 async function dropOldEmailIndex(): Promise<void> {
   try {
     const db = mongoose.connection.db;
+
+    if (!db) {
+      console.log('  ⚠️  Database not available for migration');
+      return;
+    }
+
     const customersCollection = db.collection('customers');
 
     // Get all indexes
