@@ -133,14 +133,18 @@ export const extractTenant = async (
       return next();
     }
 
-    // Extract subdomain from host
+    // Extract subdomain from host or x-subdomain header
     const host = req.get('host') || req.hostname;
     const headerSubdomain = normalizeHeaderSubdomain(req.headers['x-subdomain']);
-    let subdomain = extractSubdomain(host);
 
-    if (!subdomain && process.env.NODE_ENV === 'development' && headerSubdomain) {
+    // In development mode, prioritize x-subdomain header (for mobile apps)
+    let subdomain: string | null = null;
+    if (process.env.NODE_ENV === 'development' && headerSubdomain) {
       subdomain = headerSubdomain;
-      console.log('[Tenant] Falling back to x-subdomain header for tenant detection:', subdomain);
+      console.log('[Tenant] Using x-subdomain header in development:', subdomain);
+    } else {
+      subdomain = extractSubdomain(host);
+      console.log('[Tenant] Extracted subdomain from host:', subdomain);
     }
 
     // Validate subdomain exists
