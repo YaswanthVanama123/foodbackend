@@ -15,6 +15,9 @@ import { extractTenant } from './modules/common/middleware/tenantMiddleware';
 import { errorHandler } from './modules/common/middleware/errorHandler';
 import firebaseService from './services/firebase.service';
 
+// Import performance tracking
+const performanceTrackingMiddleware = require('./modules/common/middleware/performanceTrackingMiddleware');
+
 // Load environment variables
 dotenv.config();
 
@@ -63,6 +66,7 @@ import {
   auditRoutes,
   fcmTokenRoutes as superAdminFcmTokenRoutes,
 } from './modules/superadmin';
+import monitoringRoutes from './modules/superadmin/routes/monitoring';
 
 // Import public routes from common module
 import publicRoutes from './modules/common/routes/publicRoutes';
@@ -136,6 +140,10 @@ if (NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
+// Performance Tracking Middleware
+// Track all API requests for monitoring dashboard
+app.use(performanceTrackingMiddleware);
+
 // Body Parser Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -189,6 +197,7 @@ app.use('/api/superadmin/subscriptions', subscriptionRoutes);
 app.use('/api/superadmin/plans', planRoutes);
 app.use('/api/superadmin/tickets', ticketRoutes);
 app.use('/api/superadmin/audit-logs', auditRoutes);
+app.use('/api/superadmin/monitoring', monitoringRoutes); // Real-time monitoring and metrics
 
 // Apply Tenant Extraction Middleware to all other API routes
 // This extracts subdomain and validates restaurant before processing requests

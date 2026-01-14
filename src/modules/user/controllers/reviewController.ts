@@ -2,9 +2,12 @@ import { Request, Response } from 'express';
 import Review from '../../common/models/Review';
 import Order from '../../common/models/Order';
 import MenuItem from '../../common/models/MenuItem';
+import Restaurant from '../../common/models/Restaurant';
+import SuperAdmin from '../../common/models/SuperAdmin';
 import mongoose from 'mongoose';
 import { updateMenuItemRating } from '../../common/utils/ratingUtils';
 import cacheService, { CacheKeys } from '../../common/services/cacheService';
+import firebaseService from '../../../services/firebase.service';
 
 /**
  * OPTIMIZED REVIEW CONTROLLER
@@ -142,6 +145,53 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
       .populate('orderId', 'orderNumber')
       .lean()
       .exec();
+
+    // Send FCM notification to ALL super admins (fire-and-forget, async)
+    setImmediate(async () => {
+      try {
+        const [superAdmins, restaurant] = await Promise.all([
+          SuperAdmin.find(
+            {
+              isActive: true,
+              fcmTokens: { $exists: true, $ne: [] },
+            },
+            { fcmTokens: 1 }
+          )
+            .lean()
+            .exec(),
+          Restaurant.findById(req.restaurantId, { name: 1 })
+            .lean()
+            .exec(),
+        ]);
+
+        if (superAdmins.length > 0 && restaurant) {
+          const superAdminTokens = superAdmins.flatMap((sa) => sa.fcmTokens || []).filter(Boolean);
+
+          if (superAdminTokens.length > 0) {
+            const itemName = menuItem ? (menuItem as any).name : 'the order';
+            await firebaseService.sendActiveNotification(
+              superAdminTokens,
+              {
+                title: `New ${rating}-Star Review - ${restaurant.name}`,
+                body: `Customer left a ${rating}-star review for ${itemName}`,
+              },
+              {
+                reviewId: review._id.toString(),
+                orderId: orderId.toString(),
+                menuItemId: menuItemId?.toString() || '',
+                rating: rating.toString(),
+                restaurantId: req.restaurantId!.toString(),
+                restaurantName: restaurant.name,
+                type: 'new_review',
+              }
+            );
+            console.log(`✅ Notification sent to ${superAdmins.length} super admin(s) for new review`);
+          }
+        }
+      } catch (error) {
+        console.error('[REVIEW API] Super admin FCM notification failed:', error);
+      }
+    });
 
     res.status(201).json({
       success: true,

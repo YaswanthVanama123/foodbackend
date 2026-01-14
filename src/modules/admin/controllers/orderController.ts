@@ -5,6 +5,7 @@ import Table from '../../common/models/Table';
 import Customer from '../../common/models/Customer';
 import Restaurant from '../../common/models/Restaurant';
 import Admin from '../../common/models/Admin';
+import SuperAdmin from '../../common/models/SuperAdmin';
 import {
   calculateOrderTotals,
   calculateItemSubtotal,
@@ -457,6 +458,46 @@ export const createOrder = async (req: Request, res: Response): Promise<void> =>
               );
             }
           }
+
+          // Send FCM notification to ALL super admins (fire-and-forget)
+          try {
+            const superAdmins = await SuperAdmin.find(
+              {
+                isActive: true,
+                fcmTokens: { $exists: true, $ne: [] },
+              },
+              { fcmTokens: 1 }
+            )
+              .lean()
+              .exec();
+
+            if (superAdmins.length > 0) {
+              const superAdminTokens = superAdmins.flatMap((sa) => sa.fcmTokens || []).filter(Boolean);
+
+              if (superAdminTokens.length > 0 && restaurant) {
+                await firebaseService.sendActiveNotification(
+                  superAdminTokens,
+                  {
+                    title: `New Order - ${restaurant.name}`,
+                    body: `Order #${order.orderNumber} from Table ${order.tableNumber} - Total: $${order.total.toFixed(2)}`,
+                  },
+                  {
+                    orderId: order._id.toString(),
+                    orderNumber: order.orderNumber,
+                    tableNumber: order.tableNumber.toString(),
+                    total: order.total.toString(),
+                    status: order.status,
+                    restaurantId,
+                    restaurantName: restaurant.name,
+                    type: 'new_order',
+                  }
+                );
+                console.log(`✅ Notification sent to ${superAdmins.length} super admin(s) for new order`);
+              }
+            }
+          } catch (superAdminFcmError) {
+            console.error('[ORDER API] Super admin FCM notification failed:', superAdminFcmError);
+          }
         } catch (fcmError) {
           console.error('[ORDER API] FCM notification failed:', fcmError);
         }
@@ -614,6 +655,52 @@ export const updateOrderStatus = async (req: Request, res: Response): Promise<vo
       }
     } catch (adminFcmError) {
       // Continue even if FCM fails
+    }
+
+    // Send FCM notification to ALL super admins for "served" status
+    if (status === 'served') {
+      try {
+        const [superAdmins, restaurant] = await Promise.all([
+          SuperAdmin.find(
+            {
+              isActive: true,
+              fcmTokens: { $exists: true, $ne: [] },
+            },
+            { fcmTokens: 1 }
+          )
+            .lean()
+            .exec(),
+          Restaurant.findById(restaurantId, { name: 1 })
+            .lean()
+            .exec(),
+        ]);
+
+        if (superAdmins.length > 0 && restaurant) {
+          const superAdminTokens = superAdmins.flatMap((sa) => sa.fcmTokens || []).filter(Boolean);
+
+          if (superAdminTokens.length > 0) {
+            await firebaseService.sendActiveNotification(
+              superAdminTokens,
+              {
+                title: `Order Served - ${restaurant.name}`,
+                body: `Order #${order.orderNumber} from Table ${order.tableNumber} has been served`,
+              },
+              {
+                orderId: order._id.toString(),
+                orderNumber: order.orderNumber,
+                tableNumber: order.tableNumber.toString(),
+                status,
+                restaurantId,
+                restaurantName: restaurant.name,
+                type: 'order_served',
+              }
+            );
+            console.log(`✅ Notification sent to ${superAdmins.length} super admin(s) for order served`);
+          }
+        }
+      } catch (superAdminFcmError) {
+        console.error('[ORDER API] Super admin FCM notification failed:', superAdminFcmError);
+      }
     }
 
     // CRITICAL: Auto-delete customer account when ALL orders are served/cancelled

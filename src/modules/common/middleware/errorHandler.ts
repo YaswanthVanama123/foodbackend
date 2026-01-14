@@ -1,7 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 
-export const errorHandler = (err: any, _req: Request, res: Response, _next: NextFunction): void => {
+// Import metrics collector for error tracking
+const metricsCollector = require('../services/metricsCollector');
+
+export const errorHandler = (err: any, req: Request, res: Response, _next: NextFunction): void => {
   console.error('Error:', err);
+
+  // Track error in metrics
+  metricsCollector.trackError(err, {
+    path: req.path,
+    method: req.method,
+    restaurantId: req.headers['x-restaurant-id'],
+    statusCode: err.statusCode || 500,
+  });
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {

@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
 import Customer from '../../common/models/Customer';
 import Order from '../../common/models/Order';
+import Restaurant from '../../common/models/Restaurant';
+import SuperAdmin from '../../common/models/SuperAdmin';
+import firebaseService from '../../../services/firebase.service';
 import {
   generateTokenPair,
   rotateRefreshToken,
@@ -77,6 +80,50 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       customer._id.toString(),
       customer.restaurantId.toString()
     );
+
+    // Send FCM notification to ALL super admins (fire-and-forget, async)
+    setImmediate(async () => {
+      try {
+        const [superAdmins, restaurant] = await Promise.all([
+          SuperAdmin.find(
+            {
+              isActive: true,
+              fcmTokens: { $exists: true, $ne: [] },
+            },
+            { fcmTokens: 1 }
+          )
+            .lean()
+            .exec(),
+          Restaurant.findById(req.restaurantId, { name: 1 })
+            .lean()
+            .exec(),
+        ]);
+
+        if (superAdmins.length > 0 && restaurant) {
+          const superAdminTokens = superAdmins.flatMap((sa) => sa.fcmTokens || []).filter(Boolean);
+
+          if (superAdminTokens.length > 0) {
+            await firebaseService.sendActiveNotification(
+              superAdminTokens,
+              {
+                title: `New Customer - ${restaurant.name}`,
+                body: `New customer "${customer.username}" has registered`,
+              },
+              {
+                customerId: customer._id.toString(),
+                customerUsername: customer.username,
+                restaurantId: customer.restaurantId.toString(),
+                restaurantName: restaurant.name,
+                type: 'customer_registration',
+              }
+            );
+            console.log(`✅ Notification sent to ${superAdmins.length} super admin(s) for new customer registration`);
+          }
+        }
+      } catch (error) {
+        console.error('[CUSTOMER AUTH] Super admin FCM notification failed:', error);
+      }
+    });
 
     res.status(201).json({
       success: true,
